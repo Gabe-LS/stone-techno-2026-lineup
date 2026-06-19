@@ -454,6 +454,7 @@ def render_output_html(
         shareCode = data.share_code;
         localStorage.setItem('stc_edit_code', editCode);
         localStorage.setItem('stc_share_code', shareCode);
+        connectWS(editCode);
       } catch {}
     }
 
@@ -514,6 +515,30 @@ def render_output_html(
         saveLocal();
         applyHearts();
       } catch {}
+    }
+
+    // WebSocket real-time sync
+    let _ws = null;
+    function connectWS(code) {
+      if (_ws) { try { _ws.close(); } catch {} }
+      if (!code) return;
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      _ws = new WebSocket(proto + '//' + location.host + '/ws/' + code);
+      _ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.picks) {
+            localPicks = new Set(data.picks);
+            saveLocal();
+            applyHearts();
+            if (data.readonly !== undefined) {
+              readOnly = data.readonly;
+              if (readOnly) document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
+            }
+          }
+        } catch {}
+      };
+      _ws.onclose = () => { setTimeout(() => { if (editCode || shareCode) connectWS(code); }, 2000); };
     }
 
     // Modal helpers
@@ -615,15 +640,9 @@ def render_output_html(
     (async () => {
       const p = new URLSearchParams(location.search);
       const c = p.get('code');
-      if (c) await loadFromServer(c);
-      else if (editCode) await reconcile();
+      if (c) { await loadFromServer(c); connectWS(c); }
+      else if (editCode) { await reconcile(); connectWS(editCode); }
       applyHearts();
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && editCode && !readOnly) reconcile();
-      });
-      setInterval(() => {
-        if (document.visibilityState === 'visible' && editCode && !readOnly) reconcile();
-      }, 500);
     })();
     """)
     parts.append("  </script>")

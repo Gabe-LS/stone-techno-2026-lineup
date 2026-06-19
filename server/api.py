@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import secrets
@@ -9,7 +10,14 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -18,9 +26,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
 CODE_RE = re.compile(r"^\d{6}$")
 
-# Rate limiting: {ip: [(timestamp, endpoint_key), ...]}
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
-RATE_LIMITS = {"create": (10, 3600), "pick": (300, 3600), "load": (7200, 3600)}
+RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
+
+# WebSocket connections: edit_code -> set of websockets
+_ws_clients: dict[str, set[WebSocket]] = defaultdict(set)
 
 
 def _check_rate(ip: str, key: str) -> None:
@@ -54,7 +64,6 @@ def _init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_share_code ON sessions(share_code);
     """)
-    # Prune sessions older than 90 days
     pruned = db.execute(
         "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
     ).rowcount
@@ -65,7 +74,6 @@ def _init_db() -> None:
 
 
 def _find_session(db: sqlite3.Connection, code: str) -> tuple[str, str, str, bool]:
-    """Returns (edit_code, share_code, picks_json, is_readonly)."""
     row = db.execute(
         "SELECT edit_code, share_code, picks FROM sessions WHERE edit_code = ?", (code,)
     ).fetchone()
@@ -78,6 +86,21 @@ def _find_session(db: sqlite3.Connection, code: str) -> tuple[str, str, str, boo
     if row:
         return row[0], row[1], row[2], True
     raise HTTPException(404, "Session not found")
+
+
+async def _broadcast(
+    edit_code: str, picks: list, exclude: WebSocket | None = None
+) -> None:
+    msg = json.dumps({"picks": picks})
+    dead = set()
+    for ws in _ws_clients.get(edit_code, set()):
+        if ws is exclude:
+            continue
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            dead.add(ws)
+    _ws_clients[edit_code] -= dead
 
 
 @asynccontextmanager
@@ -156,8 +179,14 @@ async def add_pick(code: str, artist_id: str, request: Request):
             (artist_id, edit_code),
         )
         db.commit()
+        picks = json.loads(
+            db.execute(
+                "SELECT picks FROM sessions WHERE edit_code = ?", (edit_code,)
+            ).fetchone()[0]
+        )
     finally:
         db.close()
+    await _broadcast(edit_code, picks)
     return Response(status_code=204)
 
 
@@ -182,12 +211,48 @@ async def remove_pick(code: str, artist_id: str, request: Request):
             (artist_id, edit_code),
         )
         db.commit()
+        picks = json.loads(
+            db.execute(
+                "SELECT picks FROM sessions WHERE edit_code = ?", (edit_code,)
+            ).fetchone()[0]
+        )
     finally:
         db.close()
+    await _broadcast(edit_code, picks)
     return Response(status_code=204)
 
 
-# Serve static files
+@app.websocket("/ws/{code}")
+async def ws_sync(ws: WebSocket, code: str):
+    await ws.accept()
+    if not CODE_RE.match(code):
+        await ws.close(code=1008)
+        return
+    db = _get_db()
+    try:
+        edit_code, _, picks_json, readonly = _find_session(db, code)
+    except HTTPException:
+        db.close()
+        await ws.close(code=1008)
+        return
+    finally:
+        db.close()
+
+    _ws_clients[edit_code].add(ws)
+    try:
+        await ws.send_text(
+            json.dumps({"picks": json.loads(picks_json), "readonly": readonly})
+        )
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _ws_clients[edit_code].discard(ws)
+        if not _ws_clients[edit_code]:
+            del _ws_clients[edit_code]
+
+
 app.mount("/photos", StaticFiles(directory=str(STATIC_DIR / "photos")), name="photos")
 
 
