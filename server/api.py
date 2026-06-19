@@ -27,16 +27,17 @@ from fastapi.staticfiles import StaticFiles
 DB_PATH = Path(__file__).resolve().parent / "data" / "hearts.db"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
-CODE_RE = re.compile(r"^\d{6}$")
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{6,32}$")
+PIN_RE = re.compile(r"^\d{6}$")
 
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
 _rate_lock = threading.Lock()
 RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
 
-_sync_tokens: dict[str, tuple[str, float]] = {}
+_sync_pins: dict[str, tuple[str, float]] = {}
 _sync_lock = threading.Lock()
-SYNC_TOKEN_TTL = 300
-SYNC_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,32}$")
+SYNC_PIN_TTL = 300
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +45,7 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-# WebSocket connections: edit_code -> set of websockets
+# WebSocket connections: session_id -> set of websockets
 _ws_clients: dict[str, set[WebSocket]] = {}
 
 
@@ -76,14 +77,21 @@ def _init_db() -> None:
     db = _get_db()
     db.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
-            edit_code   TEXT PRIMARY KEY,
-            share_code  TEXT UNIQUE NOT NULL,
-            picks       TEXT NOT NULL DEFAULT '[]',
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            session_id   TEXT PRIMARY KEY,
+            share_token  TEXT UNIQUE NOT NULL,
+            picks        TEXT NOT NULL DEFAULT '[]',
+            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_share_code ON sessions(share_code);
+        CREATE INDEX IF NOT EXISTS idx_share_token ON sessions(share_token);
     """)
+    # Migrate from old 6-digit code schema
+    try:
+        db.execute("ALTER TABLE sessions RENAME COLUMN edit_code TO session_id")
+        db.execute("ALTER TABLE sessions RENAME COLUMN share_code TO share_token")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
     pruned = db.execute(
         "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
     ).rowcount
@@ -95,12 +103,13 @@ def _init_db() -> None:
 
 def _find_session(db: sqlite3.Connection, code: str) -> tuple[str, str, str, bool]:
     row = db.execute(
-        "SELECT edit_code, share_code, picks FROM sessions WHERE edit_code = ?", (code,)
+        "SELECT session_id, share_token, picks FROM sessions WHERE session_id = ?",
+        (code,),
     ).fetchone()
     if row:
         return row[0], row[1], row[2], False
     row = db.execute(
-        "SELECT edit_code, share_code, picks FROM sessions WHERE share_code = ?",
+        "SELECT session_id, share_token, picks FROM sessions WHERE share_token = ?",
         (code,),
     ).fetchone()
     if row:
@@ -109,11 +118,11 @@ def _find_session(db: sqlite3.Connection, code: str) -> tuple[str, str, str, boo
 
 
 async def _broadcast(
-    edit_code: str, picks: list, exclude: WebSocket | None = None
+    session_id: str, picks: list, exclude: WebSocket | None = None
 ) -> None:
     msg = json.dumps({"picks": picks})
     clients = [
-        ws for ws in list(_ws_clients.get(edit_code, set())) if ws is not exclude
+        ws for ws in list(_ws_clients.get(session_id, set())) if ws is not exclude
     ]
     if not clients:
         return
@@ -131,10 +140,10 @@ async def _broadcast(
 
     results = await asyncio.gather(*[_send(ws) for ws in clients])
     dead = {ws for ws in results if ws is not None}
-    if dead and edit_code in _ws_clients:
-        _ws_clients[edit_code] -= dead
-        if not _ws_clients[edit_code]:
-            del _ws_clients[edit_code]
+    if dead and session_id in _ws_clients:
+        _ws_clients[session_id] -= dead
+        if not _ws_clients[session_id]:
+            del _ws_clients[session_id]
 
 
 async def _prune_rate_limits() -> None:
@@ -151,9 +160,9 @@ async def _prune_rate_limits() -> None:
                 for ip in stale:
                     del _rate_limits[ip]
             with _sync_lock:
-                expired = [t for t, (_, exp) in _sync_tokens.items() if now >= exp]
-                for t in expired:
-                    del _sync_tokens[t]
+                expired = [pin for pin, (_, exp) in _sync_pins.items() if now >= exp]
+                for pin in expired:
+                    del _sync_pins[pin]
         except Exception:
             logger.exception("Failed to prune rate limits")
 
@@ -200,74 +209,64 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/api/session", status_code=201)
 def create_session(request: Request):
     _check_rate(_get_client_ip(request), "create")
+    session_id = secrets.token_urlsafe(16)
+    share_token = secrets.token_urlsafe(16)
     db = _get_db()
     try:
-        for _ in range(50):
-            # 6-digit numeric codes: short enough for users to type in the sync PIN modal
-            edit_code = f"{secrets.randbelow(1000000):06d}"
-            share_code = f"{secrets.randbelow(1000000):06d}"
-            if edit_code == share_code:
-                continue
-            existing = db.execute(
-                "SELECT 1 FROM sessions WHERE edit_code IN (?,?) OR share_code IN (?,?)",
-                (edit_code, share_code, edit_code, share_code),
-            ).fetchone()
-            if existing:
-                continue
-            try:
-                db.execute(
-                    "INSERT INTO sessions (edit_code, share_code) VALUES (?, ?)",
-                    (edit_code, share_code),
-                )
-                db.commit()
-                break
-            except sqlite3.IntegrityError:
-                continue
-        else:
-            raise HTTPException(503, "Could not generate unique session codes")
+        db.execute(
+            "INSERT INTO sessions (session_id, share_token) VALUES (?, ?)",
+            (session_id, share_token),
+        )
+        db.commit()
     finally:
         db.close()
-    return {"edit_code": edit_code, "share_code": share_code}
+    return {"session_id": session_id, "share_token": share_token}
 
 
-@app.post("/api/session/{code}/sync-token", status_code=201)
-def create_sync_token(code: str, request: Request):
-    if not CODE_RE.match(code):
+@app.post("/api/session/{code}/sync-pin", status_code=201)
+def create_sync_pin(code: str, request: Request):
+    if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     _check_rate(_get_client_ip(request), "create")
     db = _get_db()
     try:
-        edit_code, _, _, readonly = _find_session(db, code)
+        session_id, _, _, readonly = _find_session(db, code)
         if readonly:
             raise HTTPException(403, "Read-only session")
     finally:
         db.close()
-    token = secrets.token_urlsafe(16)
+    now = time.monotonic()
     with _sync_lock:
-        _sync_tokens[token] = (edit_code, time.monotonic() + SYNC_TOKEN_TTL)
-    return {"token": token}
+        for _ in range(50):
+            pin = f"{secrets.randbelow(1000000):06d}"
+            existing = _sync_pins.get(pin)
+            if existing and now < existing[1]:
+                continue
+            _sync_pins[pin] = (session_id, now + SYNC_PIN_TTL)
+            return {"pin": pin}
+    raise HTTPException(503, "Could not generate unique sync PIN")
 
 
-@app.post("/api/sync/{token}")
-def exchange_sync_token(token: str, request: Request):
-    if not SYNC_TOKEN_RE.match(token):
-        raise HTTPException(422, "Invalid token format")
+@app.post("/api/sync/{pin}")
+def exchange_sync_pin(pin: str, request: Request):
+    if not PIN_RE.match(pin):
+        raise HTTPException(422, "Invalid PIN format")
     _check_rate(_get_client_ip(request), "load")
     with _sync_lock:
-        entry = _sync_tokens.pop(token, None)
+        entry = _sync_pins.pop(pin, None)
     if not entry:
-        raise HTTPException(404, "Token not found or expired")
-    edit_code, expiry = entry
+        raise HTTPException(404, "PIN not found or expired")
+    session_id, expiry = entry
     if time.monotonic() >= expiry:
-        raise HTTPException(404, "Token not found or expired")
+        raise HTTPException(404, "PIN not found or expired")
     db = _get_db()
     try:
-        _, share_code, picks_json, _ = _find_session(db, edit_code)
+        _, share_token, picks_json, _ = _find_session(db, session_id)
         return {
             "picks": json.loads(picks_json),
             "readonly": False,
-            "edit_code": edit_code,
-            "share_code": share_code,
+            "session_id": session_id,
+            "share_token": share_token,
         }
     finally:
         db.close()
@@ -275,17 +274,17 @@ def exchange_sync_token(token: str, request: Request):
 
 @app.get("/api/session/{code}")
 def load_session(code: str, request: Request):
-    if not CODE_RE.match(code):
+    if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
-        edit_code, share_code, picks_json, readonly = _find_session(db, code)
+        session_id, share_token, picks_json, readonly = _find_session(db, code)
         return {
             "picks": json.loads(picks_json),
             "readonly": readonly,
-            "edit_code": edit_code if not readonly else None,
-            "share_code": share_code,
+            "session_id": session_id if not readonly else None,
+            "share_token": share_token,
         }
     finally:
         db.close()
@@ -295,14 +294,14 @@ def load_session(code: str, request: Request):
 def add_pick(
     code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks
 ):
-    if not CODE_RE.match(code):
+    if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
         raise HTTPException(422, "Invalid artist ID format")
     _check_rate(_get_client_ip(request), "pick")
     db = _get_db()
     try:
-        edit_code, _, _, readonly = _find_session(db, code)
+        session_id, _, _, readonly = _find_session(db, code)
         if readonly:
             raise HTTPException(403, "Read-only session")
         db.execute(
@@ -312,18 +311,18 @@ def add_pick(
                     UNION SELECT ?
                 )
             ), updated_at = datetime('now')
-            WHERE edit_code = ?""",
-            (artist_id, edit_code),
+            WHERE session_id = ?""",
+            (artist_id, session_id),
         )
         db.commit()
         picks = json.loads(
             db.execute(
-                "SELECT picks FROM sessions WHERE edit_code = ?", (edit_code,)
+                "SELECT picks FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()[0]
         )
     finally:
         db.close()
-    background_tasks.add_task(_broadcast, edit_code, picks)
+    background_tasks.add_task(_broadcast, session_id, picks)
     return Response(status_code=204)
 
 
@@ -331,14 +330,14 @@ def add_pick(
 def remove_pick(
     code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks
 ):
-    if not CODE_RE.match(code):
+    if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
         raise HTTPException(422, "Invalid artist ID format")
     _check_rate(_get_client_ip(request), "pick")
     db = _get_db()
     try:
-        edit_code, _, _, readonly = _find_session(db, code)
+        session_id, _, _, readonly = _find_session(db, code)
         if readonly:
             raise HTTPException(403, "Read-only session")
         db.execute(
@@ -347,18 +346,18 @@ def remove_pick(
                  WHERE value != ?),
                 '[]'
             ), updated_at = datetime('now')
-            WHERE edit_code = ?""",
-            (artist_id, edit_code),
+            WHERE session_id = ?""",
+            (artist_id, session_id),
         )
         db.commit()
         picks = json.loads(
             db.execute(
-                "SELECT picks FROM sessions WHERE edit_code = ?", (edit_code,)
+                "SELECT picks FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()[0]
         )
     finally:
         db.close()
-    background_tasks.add_task(_broadcast, edit_code, picks)
+    background_tasks.add_task(_broadcast, session_id, picks)
     return Response(status_code=204)
 
 
@@ -368,19 +367,19 @@ MAX_WS_PER_SESSION = 20
 @app.websocket("/ws/{code}")
 async def ws_sync(ws: WebSocket, code: str):
     await ws.accept()
-    if not CODE_RE.match(code):
+    if not TOKEN_RE.match(code):
         await ws.close(code=1008)
         return
     db = _get_db()
     try:
-        edit_code, _, picks_json, readonly = _find_session(db, code)
+        session_id, _, picks_json, readonly = _find_session(db, code)
     except HTTPException:
         await ws.close(code=1008)
         return
     finally:
         db.close()
 
-    clients = _ws_clients.setdefault(edit_code, set())
+    clients = _ws_clients.setdefault(session_id, set())
     if len(clients) >= MAX_WS_PER_SESSION:
         await ws.close(code=1013)
         return
@@ -394,10 +393,10 @@ async def ws_sync(ws: WebSocket, code: str):
     except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     finally:
-        if edit_code in _ws_clients:
-            _ws_clients[edit_code].discard(ws)
-            if not _ws_clients[edit_code]:
-                del _ws_clients[edit_code]
+        if session_id in _ws_clients:
+            _ws_clients[session_id].discard(ws)
+            if not _ws_clients[session_id]:
+                del _ws_clients[session_id]
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])

@@ -399,8 +399,17 @@ def render_output_html(
 
     // Hearts
     const API = '/api';
-    let editCode = localStorage.getItem('stc_edit_code');
-    let shareCode = localStorage.getItem('stc_share_code');
+    // Migrate old localStorage keys
+    if (localStorage.getItem('stc_edit_code') && !localStorage.getItem('stc_session_id')) {
+      localStorage.setItem('stc_session_id', localStorage.getItem('stc_edit_code'));
+      localStorage.removeItem('stc_edit_code');
+    }
+    if (localStorage.getItem('stc_share_code') && !localStorage.getItem('stc_share_token')) {
+      localStorage.setItem('stc_share_token', localStorage.getItem('stc_share_code'));
+      localStorage.removeItem('stc_share_code');
+    }
+    let sessionId = localStorage.getItem('stc_session_id');
+    let shareToken = localStorage.getItem('stc_share_token');
     let localPicks; try { localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]')); } catch { localPicks = new Set(); localStorage.removeItem('stc_picks'); }
     let readOnly = false;
     let filterActive = false;
@@ -469,20 +478,20 @@ def render_output_html(
 
     let _sessionPromise = null;
     async function ensureSession() {
-      if (editCode) return;
+      if (sessionId) return;
       if (_sessionPromise) return _sessionPromise;
       _sessionPromise = (async () => {
         try {
           const res = await fetch(API + '/session', {method: 'POST'});
           if (!res.ok) return;
           const data = await res.json();
-          editCode = data.edit_code;
-          shareCode = data.share_code;
-          localStorage.setItem('stc_edit_code', editCode);
-          localStorage.setItem('stc_share_code', shareCode);
-          connectWS(editCode);
+          sessionId = data.session_id;
+          shareToken = data.share_token;
+          localStorage.setItem('stc_session_id', sessionId);
+          localStorage.setItem('stc_share_token', shareToken);
+          connectWS(sessionId);
           for (const id of localPicks) {
-            fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
+            fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {});
           }
         } catch {}
         finally { _sessionPromise = null; }
@@ -503,15 +512,15 @@ def render_output_html(
       saveLocal();
 
       await ensureSession();
-      if (!editCode) return;
+      if (!sessionId) return;
 
       try {
         const method = adding ? 'POST' : 'DELETE';
-        const res = await fetch(API + '/session/' + editCode + '/pick/' + id, {method});
+        const res = await fetch(API + '/session/' + sessionId + '/pick/' + id, {method});
         if (res.status === 404) {
-          editCode = null; shareCode = null;
-          localStorage.removeItem('stc_edit_code');
-          localStorage.removeItem('stc_share_code');
+          sessionId = null; shareToken = null;
+          localStorage.removeItem('stc_session_id');
+          localStorage.removeItem('stc_share_token');
           await ensureSession();
           return;
         }
@@ -533,10 +542,10 @@ def render_output_html(
         localPicks = new Set(data.picks);
         readOnly = data.readonly;
         if (!readOnly) {
-          editCode = data.edit_code || null;
-          shareCode = data.share_code || null;
-          if (editCode) localStorage.setItem('stc_edit_code', editCode); else localStorage.removeItem('stc_edit_code');
-          if (shareCode) localStorage.setItem('stc_share_code', shareCode); else localStorage.removeItem('stc_share_code');
+          sessionId = data.session_id || null;
+          shareToken = data.share_token || null;
+          if (sessionId) localStorage.setItem('stc_session_id', sessionId); else localStorage.removeItem('stc_session_id');
+          if (shareToken) localStorage.setItem('stc_share_token', shareToken); else localStorage.removeItem('stc_share_token');
           saveLocal();
         }
         applyHearts();
@@ -546,13 +555,13 @@ def render_output_html(
     }
 
     async function reconcile() {
-      if (!editCode || readOnly) return;
+      if (!sessionId || readOnly) return;
       try {
-        const res = await fetch(API + '/session/' + editCode);
+        const res = await fetch(API + '/session/' + sessionId);
         if (res.status === 404) {
-          editCode = null; shareCode = null;
-          localStorage.removeItem('stc_edit_code');
-          localStorage.removeItem('stc_share_code');
+          sessionId = null; shareToken = null;
+          localStorage.removeItem('stc_session_id');
+          localStorage.removeItem('stc_share_token');
           await ensureSession();
           return;
         }
@@ -561,7 +570,7 @@ def render_output_html(
         const serverPicks = new Set(data.picks);
         const syncs = [];
         for (const id of localPicks) {
-          if (!serverPicks.has(id)) syncs.push(fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {}));
+          if (!serverPicks.has(id)) syncs.push(fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {}));
         }
         await Promise.all(syncs);
         for (const id of serverPicks) localPicks.add(id);
@@ -593,7 +602,7 @@ def render_output_html(
           }
         } catch {}
       };
-      _ws.onclose = (ev) => { if (ev.code === 1008) return; setTimeout(() => { const cur = editCode || shareCode; if (cur === code) connectWS(code); }, _wsDelay + Math.random() * 1000); _wsDelay = Math.min(_wsDelay * 2, 60000); };
+      _ws.onclose = (ev) => { if (ev.code === 1008) return; setTimeout(() => { const cur = sessionId || shareToken; if (cur === code) connectWS(code); }, _wsDelay + Math.random() * 1000); _wsDelay = Math.min(_wsDelay * 2, 60000); };
     }
 
     // Modal system
@@ -683,27 +692,27 @@ def render_output_html(
       });
     });
     function openShareModal() {
-      if (!shareCode) { alert('Heart an artist first.'); return; }
-      shareLink.textContent = location.origin + '/?code=' + shareCode;
+      if (!shareToken) { alert('Heart an artist first.'); return; }
+      shareLink.textContent = location.origin + '/?code=' + shareToken;
       openDialog('m-share');
     }
 
     // Sync modal
     async function openSyncModal() {
       await ensureSession();
-      if (!editCode) { alert('Heart an artist first.'); return; }
+      if (!sessionId) { alert('Heart an artist first.'); return; }
       document.querySelectorAll('#m-sync .tabs button').forEach(b => b.classList.remove('on'));
       document.querySelector('#m-sync .tabs button').classList.add('on');
       document.getElementById('p-send').classList.add('on');
       document.getElementById('p-recv').classList.remove('on');
       const d = document.getElementById('pin-display');
       d.innerHTML = '';
-      for (const ch of editCode) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
       try {
-        const res = await fetch(API + '/session/' + editCode + '/sync-token', {method: 'POST'});
+        const res = await fetch(API + '/session/' + sessionId + '/sync-pin', {method: 'POST'});
         if (res.ok) {
           const data = await res.json();
-          loadQR('sync-qr', location.origin + '/?sync=' + data.token);
+          for (const ch of data.pin) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
+          loadQR('sync-qr', location.origin + '/?sync=' + data.pin);
         }
       } catch {}
       openDialog('m-sync');
@@ -734,47 +743,47 @@ def render_output_html(
     pinField.addEventListener('focus', () => { document.getElementById('pin-wrap').classList.add('focused'); syncPinDisplay(); });
     pinField.addEventListener('blur', () => { document.getElementById('pin-wrap').classList.remove('focused'); pinBoxes.forEach(b => b.classList.remove('active')); });
     document.getElementById('pin-wrap').addEventListener('click', () => pinField.focus());
-    function submitPin() {
-      const code = pinField.value.replace(/\\D/g, '');
-      if (code.length !== 6) return;
-      loadFromServer(code);
+    async function submitPin() {
+      const pin = pinField.value.replace(/\\D/g, '');
+      if (pin.length !== 6) return;
       closeDialog('m-sync');
       pinField.value = '';
       syncPinDisplay();
+      await exchangeSyncPin(pin);
     }
 
-    async function exchangeSyncToken(token) {
+    async function exchangeSyncPin(pin) {
       try {
-        const res = await fetch(API + '/sync/' + token, {method: 'POST'});
+        const res = await fetch(API + '/sync/' + pin, {method: 'POST'});
         if (!res.ok) return;
         const data = await res.json();
         localPicks = new Set(data.picks);
         readOnly = data.readonly;
         if (!readOnly) {
-          editCode = data.edit_code || null;
-          shareCode = data.share_code || null;
-          if (editCode) localStorage.setItem('stc_edit_code', editCode); else localStorage.removeItem('stc_edit_code');
-          if (shareCode) localStorage.setItem('stc_share_code', shareCode); else localStorage.removeItem('stc_share_code');
+          sessionId = data.session_id || null;
+          shareToken = data.share_token || null;
+          if (sessionId) localStorage.setItem('stc_session_id', sessionId); else localStorage.removeItem('stc_session_id');
+          if (shareToken) localStorage.setItem('stc_share_token', shareToken); else localStorage.removeItem('stc_share_token');
           saveLocal();
         }
         applyHearts();
-        if (editCode) connectWS(editCode);
+        if (sessionId) connectWS(sessionId);
       } catch {}
     }
 
     // Init
     (async () => {
       const p = new URLSearchParams(location.search);
-      const syncToken = p.get('sync');
+      const syncPin = p.get('sync');
       const c = p.get('code');
-      if (syncToken) {
+      if (syncPin) {
         history.replaceState(null, '', location.pathname);
-        await exchangeSyncToken(syncToken);
+        await exchangeSyncPin(syncPin);
       } else if (c) {
         history.replaceState(null, '', location.pathname);
         await loadFromServer(c); connectWS(c);
       }
-      else if (editCode) { await reconcile(); connectWS(editCode); }
+      else if (sessionId) { await reconcile(); connectWS(sessionId); }
       applyHearts();
     })();
     """)
