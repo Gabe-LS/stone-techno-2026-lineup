@@ -95,56 +95,57 @@ def main() -> None:
     output_path = output_dir / "lineup.html"
 
     db = sqlite3.connect(str(DB_PATH))
-    init_db(db)
+    try:
+        init_db(db)
 
-    if not args.render_only:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            ctx = browser.new_context(
-                locale="en-US",
-                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-            )
+        if not args.render_only:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                ctx = browser.new_context(
+                    locale="en-US",
+                    extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+                )
 
-            print(f"Fetching {args.url} ...")
-            parsed = scrape_lineup(ctx, args.url)
-            print(
-                f"Parsed {len(parsed['artists'])} artists across "
-                f"{len(parsed['sections'])} sections, {len(parsed['locations'])} locations."
-            )
-            upsert_lineup(db, parsed)
+                print(f"Fetching {args.url} ...")
+                parsed = scrape_lineup(ctx, args.url)
+                print(
+                    f"Parsed {len(parsed['artists'])} artists across "
+                    f"{len(parsed['sections'])} sections, {len(parsed['locations'])} locations."
+                )
+                upsert_lineup(db, parsed)
+                apply_overrides(db, OVERRIDES_PATH)
+
+                if args.refresh_followers:
+                    db.execute(
+                        "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, spotify_listeners = NULL"
+                    )
+                    db.commit()
+
+                if not args.no_followers:
+                    fetch_all_sc(ctx, db)
+                    fetch_all_ig(ctx, db)
+                    fetch_all_spotify(ctx, db)
+
+                browser.close()
+        else:
+            print("Rendering from database (no scraping) ...")
             apply_overrides(db, OVERRIDES_PATH)
 
-            if args.refresh_followers:
-                db.execute(
-                    "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, spotify_listeners = NULL"
-                )
-                db.commit()
+        if args.refresh_photos:
+            db.execute("UPDATE artists SET photo_local = NULL")
+            db.commit()
 
-            if not args.no_followers:
-                fetch_all_sc(ctx, db)
-                fetch_all_ig(ctx, db)
-                fetch_all_spotify(ctx, db)
+        if not args.no_photos:
+            process_artist_photos(db, output_dir / "photos")
 
-            browser.close()
-    else:
-        print("Rendering from database (no scraping) ...")
-        apply_overrides(db, OVERRIDES_PATH)
-
-    if args.refresh_photos:
-        db.execute("UPDATE artists SET photo_local = NULL")
-        db.commit()
-
-    if not args.no_photos:
-        process_artist_photos(db, output_dir / "photos")
-
-    ordered_sections = load_sections_from_db(db)
-    all_locations = load_locations_from_db(db)
-    all_assignments = load_assignments_from_db(db)
-    output_html = render_output_html(
-        args.title, ordered_sections, all_assignments, all_locations
-    )
-
-    db.close()
+        ordered_sections = load_sections_from_db(db)
+        all_locations = load_locations_from_db(db)
+        all_assignments = load_assignments_from_db(db)
+        output_html = render_output_html(
+            args.title, ordered_sections, all_assignments, all_locations
+        )
+    finally:
+        db.close()
 
     output_path.write_text(output_html, encoding="utf-8")
     print(f"Wrote {output_path}")

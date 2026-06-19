@@ -35,7 +35,7 @@ def _get_client_ip(request: Request) -> str:
 
 
 # WebSocket connections: edit_code -> set of websockets
-_ws_clients: dict[str, set[WebSocket]] = defaultdict(set)
+_ws_clients: dict[str, set[WebSocket]] = {}
 
 
 def _check_rate(ip: str, key: str) -> None:
@@ -105,7 +105,10 @@ async def _broadcast(
             await asyncio.wait_for(ws.send_text(msg), timeout=5.0)
         except Exception:
             dead.add(ws)
-    _ws_clients[edit_code] -= dead
+    if dead and edit_code in _ws_clients:
+        _ws_clients[edit_code] -= dead
+        if not _ws_clients[edit_code]:
+            del _ws_clients[edit_code]
 
 
 async def _prune_rate_limits() -> None:
@@ -127,6 +130,10 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_prune_rate_limits())
     yield
     task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(lifespan=lifespan)
@@ -137,7 +144,7 @@ async def create_session(request: Request):
     _check_rate(_get_client_ip(request), "create")
     db = _get_db()
     try:
-        while True:
+        for _ in range(50):
             edit_code = f"{secrets.randbelow(1000000):06d}"
             share_code = f"{secrets.randbelow(1000000):06d}"
             if edit_code == share_code:
@@ -157,6 +164,8 @@ async def create_session(request: Request):
                 break
             except sqlite3.IntegrityError:
                 continue
+        else:
+            raise HTTPException(503, "Could not generate unique session codes")
     finally:
         db.close()
     return {"edit_code": edit_code, "share_code": share_code}
@@ -263,7 +272,7 @@ async def ws_sync(ws: WebSocket, code: str):
     finally:
         db.close()
 
-    _ws_clients[edit_code].add(ws)
+    _ws_clients.setdefault(edit_code, set()).add(ws)
     try:
         await ws.send_text(
             json.dumps({"picks": json.loads(picks_json), "readonly": readonly})
@@ -273,9 +282,10 @@ async def ws_sync(ws: WebSocket, code: str):
     except WebSocketDisconnect:
         pass
     finally:
-        _ws_clients[edit_code].discard(ws)
-        if not _ws_clients[edit_code]:
-            del _ws_clients[edit_code]
+        if edit_code in _ws_clients:
+            _ws_clients[edit_code].discard(ws)
+            if not _ws_clients[edit_code]:
+                del _ws_clients[edit_code]
 
 
 (STATIC_DIR / "photos").mkdir(parents=True, exist_ok=True)

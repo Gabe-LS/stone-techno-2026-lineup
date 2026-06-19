@@ -89,7 +89,11 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
             "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(overlay_id) DO UPDATE SET "
             "name=excluded.name, instagram=excluded.instagram, soundcloud=excluded.soundcloud, "
-            "spotify=excluded.spotify, youtube=excluded.youtube, photo=excluded.photo",
+            "spotify=excluded.spotify, youtube=excluded.youtube, photo=excluded.photo, "
+            "ig_followers = CASE WHEN instagram IS NOT excluded.instagram THEN NULL ELSE ig_followers END, "
+            "sc_followers = CASE WHEN soundcloud IS NOT excluded.soundcloud THEN NULL ELSE sc_followers END, "
+            "spotify_listeners = CASE WHEN spotify IS NOT excluded.spotify THEN NULL ELSE spotify_listeners END, "
+            "photo_local = CASE WHEN photo IS NOT excluded.photo THEN NULL ELSE photo_local END",
             (
                 oid,
                 d["name"],
@@ -100,16 +104,17 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
                 d.get("photo"),
             ),
         )
-    db.execute("DELETE FROM artist_sections")
-    for assignment in parsed["assignments"]:
-        db.execute(
-            "INSERT OR IGNORE INTO artist_sections (overlay_id, timestamp_key, location_id) VALUES (?, ?, ?)",
-            (
-                assignment["overlay_id"],
-                assignment["timestamp_key"],
-                assignment.get("location_id"),
-            ),
-        )
+    if parsed["assignments"]:
+        db.execute("DELETE FROM artist_sections")
+        for assignment in parsed["assignments"]:
+            db.execute(
+                "INSERT OR IGNORE INTO artist_sections (overlay_id, timestamp_key, location_id) VALUES (?, ?, ?)",
+                (
+                    assignment["overlay_id"],
+                    assignment["timestamp_key"],
+                    assignment.get("location_id"),
+                ),
+            )
     db.commit()
 
 
@@ -266,8 +271,6 @@ def update_artist_field(db: sqlite3.Connection, oid: str, field: str, value) -> 
 
 
 def get_artist(db: sqlite3.Connection, oid: str) -> sqlite3.Row | tuple:
-    db.row_factory = sqlite3.Row
-    try:
-        return db.execute("SELECT * FROM artists WHERE overlay_id = ?", (oid,)).fetchone()
-    finally:
-        db.row_factory = None
+    cur = db.cursor()
+    cur.row_factory = sqlite3.Row
+    return cur.execute("SELECT * FROM artists WHERE overlay_id = ?", (oid,)).fetchone()

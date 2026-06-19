@@ -93,7 +93,10 @@ def _parse_timestamp_key(ts_key: str) -> tuple[str, str] | None:
     raw = ts_key[:-1]
     if not raw.isdigit():
         return None
-    dt = datetime.fromtimestamp(int(raw), tz=timezone.utc)
+    try:
+        dt = datetime.fromtimestamp(int(raw), tz=timezone.utc)
+    except (ValueError, OSError, OverflowError):
+        return None
     return dt.strftime("%Y-%m-%d"), "day" if suffix == "d" else "night"
 
 
