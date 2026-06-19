@@ -417,7 +417,7 @@ def fetch_ig_profile(ctx: BrowserContext, url: str) -> dict:
             soup = BeautifulSoup(page.content(), "html.parser")
             meta = soup.find("meta", attrs={"property": "og:description"})
             if meta:
-                m = re.match(r"([\d,.]+[KMB]?)\s+Follower", meta.get("content", ""))
+                m = re.match(r"([\d,.]+[KMB]?)\s+Follower", meta.get("content", ""), re.IGNORECASE)
                 if m:
                     result["followers"] = parse_follower_count(m.group(1))
 

@@ -502,6 +502,13 @@ def render_output_html(
       try {
         const method = adding ? 'POST' : 'DELETE';
         const res = await fetch(API + '/session/' + editCode + '/pick/' + id, {method});
+        if (res.status === 404) {
+          editCode = null; shareCode = null;
+          localStorage.removeItem('stc_edit_code');
+          localStorage.removeItem('stc_share_code');
+          await ensureSession();
+          return;
+        }
         if (!res.ok && res.status !== 204) throw new Error();
       } catch {
         if (adding) localPicks.delete(id); else localPicks.add(id);
@@ -536,6 +543,13 @@ def render_output_html(
       if (!editCode || readOnly) return;
       try {
         const res = await fetch(API + '/session/' + editCode);
+        if (res.status === 404) {
+          editCode = null; shareCode = null;
+          localStorage.removeItem('stc_edit_code');
+          localStorage.removeItem('stc_share_code');
+          await ensureSession();
+          return;
+        }
         if (!res.ok) return;
         const data = await res.json();
         const serverPicks = new Set(data.picks);

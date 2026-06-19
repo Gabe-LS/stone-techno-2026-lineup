@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import (
+    BackgroundTasks,
     FastAPI,
     HTTPException,
     Request,
@@ -42,7 +43,7 @@ def _check_rate(ip: str, key: str) -> None:
     limit, window = RATE_LIMITS[key]
     now = time.monotonic()
     entries = _rate_limits[ip]
-    _rate_limits[ip] = [(t, k) for t, k in entries if now - t < window]
+    _rate_limits[ip] = [(t, k) for t, k in entries if now - t < RATE_LIMITS.get(k, (0, 3600))[1]]
     count = sum(1 for t, k in _rate_limits[ip] if k == key)
     if count >= limit:
         raise HTTPException(429, "Rate limit exceeded", headers={"Retry-After": "60"})
@@ -97,14 +98,23 @@ async def _broadcast(
     edit_code: str, picks: list, exclude: WebSocket | None = None
 ) -> None:
     msg = json.dumps({"picks": picks})
-    dead = set()
-    for ws in list(_ws_clients.get(edit_code, set())):
-        if ws is exclude:
-            continue
+    clients = [ws for ws in list(_ws_clients.get(edit_code, set())) if ws is not exclude]
+    if not clients:
+        return
+
+    async def _send(ws: WebSocket) -> WebSocket | None:
         try:
             await asyncio.wait_for(ws.send_text(msg), timeout=5.0)
+            return None
         except Exception:
-            dead.add(ws)
+            try:
+                await ws.close()
+            except Exception:
+                pass
+            return ws
+
+    results = await asyncio.gather(*[_send(ws) for ws in clients])
+    dead = {ws for ws in results if ws is not None}
     if dead and edit_code in _ws_clients:
         _ws_clients[edit_code] -= dead
         if not _ws_clients[edit_code]:
@@ -114,14 +124,17 @@ async def _broadcast(
 async def _prune_rate_limits() -> None:
     while True:
         await asyncio.sleep(3600)
-        now = time.monotonic()
-        stale = [
-            ip
-            for ip, entries in _rate_limits.items()
-            if all(now - t >= 3600 for t, _ in entries)
-        ]
-        for ip in stale:
-            del _rate_limits[ip]
+        try:
+            now = time.monotonic()
+            stale = [
+                ip
+                for ip, entries in _rate_limits.items()
+                if all(now - t >= 3600 for t, _ in entries)
+            ]
+            for ip in stale:
+                del _rate_limits[ip]
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -140,7 +153,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/api/session", status_code=201)
-async def create_session(request: Request):
+def create_session(request: Request):
     _check_rate(_get_client_ip(request), "create")
     db = _get_db()
     try:
@@ -172,7 +185,7 @@ async def create_session(request: Request):
 
 
 @app.get("/api/session/{code}")
-async def load_session(code: str, request: Request):
+def load_session(code: str, request: Request):
     if not CODE_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     _check_rate(_get_client_ip(request), "load")
@@ -190,7 +203,7 @@ async def load_session(code: str, request: Request):
 
 
 @app.post("/api/session/{code}/pick/{artist_id}", status_code=204)
-async def add_pick(code: str, artist_id: str, request: Request):
+def add_pick(code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks):
     if not CODE_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
@@ -219,12 +232,12 @@ async def add_pick(code: str, artist_id: str, request: Request):
         )
     finally:
         db.close()
-    await _broadcast(edit_code, picks)
+    background_tasks.add_task(_broadcast, edit_code, picks)
     return Response(status_code=204)
 
 
 @app.delete("/api/session/{code}/pick/{artist_id}", status_code=204)
-async def remove_pick(code: str, artist_id: str, request: Request):
+def remove_pick(code: str, artist_id: str, request: Request, background_tasks: BackgroundTasks):
     if not CODE_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
@@ -252,7 +265,7 @@ async def remove_pick(code: str, artist_id: str, request: Request):
         )
     finally:
         db.close()
-    await _broadcast(edit_code, picks)
+    background_tasks.add_task(_broadcast, edit_code, picks)
     return Response(status_code=204)
 
 
