@@ -437,7 +437,7 @@ def render_output_html(
     function updateUI() {
       const btn = document.getElementById('btn-filter');
       const n = localPicks.size;
-      btn.textContent = n ? 'Show My Picks · ' + n : 'Show My Picks';
+      btn.textContent = 'Show My Picks';
       document.querySelectorAll('.artist-item').forEach(li => {
         li.classList.toggle('hearted', localPicks.has(li.dataset.artistId));
       });
