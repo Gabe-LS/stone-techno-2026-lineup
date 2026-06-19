@@ -866,6 +866,21 @@ def render_output_html(
         await loadFromServer(c); connectWS(c);
       }
       else if (sessionId) { await reconcile(); connectWS(sessionId); }
+      else {
+        try {
+          const res = await fetch(API + '/me');
+          if (res.ok) {
+            const data = await res.json();
+            localPicks = new Set(data.picks);
+            sessionId = data.session_id;
+            shareToken = data.share_token;
+            localStorage.setItem('stc_session_id', sessionId);
+            localStorage.setItem('stc_share_token', shareToken);
+            saveLocal();
+            connectWS(sessionId);
+          }
+        } catch {}
+      }
       applyHearts();
     })();
     """)

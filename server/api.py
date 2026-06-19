@@ -37,8 +37,22 @@ RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
 _sync_pins: dict[str, tuple[str, float]] = {}
 _sync_lock = threading.Lock()
 SYNC_PIN_TTL = 300
+SESSION_COOKIE = "stc_session"
+SESSION_COOKIE_MAX_AGE = 7776000
 
 logger = logging.getLogger(__name__)
+
+
+def _set_session_cookie(response: Response, session_id: str) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=session_id,
+        max_age=SESSION_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
 
 
 def _get_client_ip(request: Request) -> str:
@@ -217,7 +231,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/api/session", status_code=201)
-def create_session(request: Request):
+def create_session(request: Request, response: Response):
     _check_rate(_get_client_ip(request), "create")
     session_id = secrets.token_urlsafe(16)
     share_token = secrets.token_urlsafe(16)
@@ -230,6 +244,7 @@ def create_session(request: Request):
         db.commit()
     finally:
         db.close()
+    _set_session_cookie(response, session_id)
     return {"session_id": session_id, "share_token": share_token}
 
 
@@ -261,7 +276,9 @@ def create_sync_pin(code: str, request: Request):
 
 
 @app.post("/api/sync/{pin}")
-def exchange_sync_pin(pin: str, request: Request, background_tasks: BackgroundTasks):
+def exchange_sync_pin(
+    pin: str, request: Request, response: Response, background_tasks: BackgroundTasks
+):
     if not PIN_RE.match(pin):
         raise HTTPException(422, "Invalid PIN format")
     _check_rate(_get_client_ip(request), "load")
@@ -275,6 +292,7 @@ def exchange_sync_pin(pin: str, request: Request, background_tasks: BackgroundTa
     db = _get_db()
     try:
         _, share_token, picks_json, _ = _find_session(db, session_id)
+        _set_session_cookie(response, session_id)
         background_tasks.add_task(_broadcast_sync_complete, session_id)
         return {
             "picks": json.loads(picks_json),
@@ -286,14 +304,36 @@ def exchange_sync_pin(pin: str, request: Request, background_tasks: BackgroundTa
         db.close()
 
 
+@app.get("/api/me")
+def get_me(request: Request, response: Response):
+    session_id = request.cookies.get(SESSION_COOKIE)
+    if not session_id or not TOKEN_RE.match(session_id):
+        raise HTTPException(401, "No session")
+    _check_rate(_get_client_ip(request), "load")
+    db = _get_db()
+    try:
+        _, share_token, picks_json, _ = _find_session(db, session_id)
+        _set_session_cookie(response, session_id)
+        return {
+            "picks": json.loads(picks_json),
+            "readonly": False,
+            "session_id": session_id,
+            "share_token": share_token,
+        }
+    finally:
+        db.close()
+
+
 @app.get("/api/session/{code}")
-def load_session(code: str, request: Request):
+def load_session(code: str, request: Request, response: Response):
     if not TOKEN_RE.match(code):
         raise HTTPException(422, "Invalid code format")
     _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
         session_id, share_token, picks_json, readonly = _find_session(db, code)
+        if not readonly:
+            _set_session_cookie(response, session_id)
         return {
             "picks": json.loads(picks_json),
             "readonly": readonly,
