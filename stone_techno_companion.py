@@ -100,7 +100,10 @@ def main() -> None:
     if not args.render_only:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            ctx = browser.new_context()
+            ctx = browser.new_context(
+                locale="en-US",
+                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+            )
 
             print(f"Fetching {args.url} ...")
             parsed = scrape_lineup(ctx, args.url)

@@ -108,10 +108,25 @@ async def _broadcast(
     _ws_clients[edit_code] -= dead
 
 
+async def _prune_rate_limits() -> None:
+    while True:
+        await asyncio.sleep(3600)
+        now = time.monotonic()
+        stale = [
+            ip
+            for ip, entries in _rate_limits.items()
+            if all(now - t >= 3600 for t, _ in entries)
+        ]
+        for ip in stale:
+            del _rate_limits[ip]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_db()
+    task = asyncio.create_task(_prune_rate_limits())
     yield
+    task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -131,13 +146,17 @@ async def create_session(request: Request):
                 "SELECT 1 FROM sessions WHERE edit_code IN (?,?) OR share_code IN (?,?)",
                 (edit_code, share_code, edit_code, share_code),
             ).fetchone()
-            if not existing:
+            if existing:
+                continue
+            try:
+                db.execute(
+                    "INSERT INTO sessions (edit_code, share_code) VALUES (?, ?)",
+                    (edit_code, share_code),
+                )
+                db.commit()
                 break
-        db.execute(
-            "INSERT INTO sessions (edit_code, share_code) VALUES (?, ?)",
-            (edit_code, share_code),
-        )
-        db.commit()
+            except sqlite3.IntegrityError:
+                continue
     finally:
         db.close()
     return {"edit_code": edit_code, "share_code": share_code}
@@ -201,7 +220,7 @@ async def remove_pick(code: str, artist_id: str, request: Request):
         raise HTTPException(422, "Invalid code format")
     if not UUID_RE.match(artist_id):
         raise HTTPException(422, "Invalid artist ID format")
-    _check_rate(request.client.host, "pick")
+    _check_rate(_get_client_ip(request), "pick")
     db = _get_db()
     try:
         edit_code, _, _, readonly = _find_session(db, code)

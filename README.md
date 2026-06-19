@@ -163,7 +163,7 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 | `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove a pick |
 | `WS` | `/ws/{code}` | WebSocket for real-time sync |
 
-Pick operations are atomic — they use `json_insert`/`json_remove` with `json_each` to avoid read-modify-write races.
+Pick operations are atomic — they use `json_group_array` with `json_each` and `UNION`/`WHERE` to avoid read-modify-write races.
 
 ### Rate Limits
 

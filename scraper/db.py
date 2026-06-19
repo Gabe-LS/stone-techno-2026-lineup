@@ -267,6 +267,7 @@ def update_artist_field(db: sqlite3.Connection, oid: str, field: str, value) -> 
 
 def get_artist(db: sqlite3.Connection, oid: str) -> sqlite3.Row | tuple:
     db.row_factory = sqlite3.Row
-    row = db.execute("SELECT * FROM artists WHERE overlay_id = ?", (oid,)).fetchone()
-    db.row_factory = None
-    return row
+    try:
+        return db.execute("SELECT * FROM artists WHERE overlay_id = ?", (oid,)).fetchone()
+    finally:
+        db.row_factory = None

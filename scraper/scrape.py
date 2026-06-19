@@ -221,7 +221,7 @@ def fetch_sc_profile(ctx: BrowserContext, url: str) -> dict:
 
         link = soup.select_one('a[title*="followers"]')
         if link:
-            m = re.match(r"([\d,.]+)", link.get("title", ""))
+            m = re.match(r"([\d,.]+[KMB]?)", link.get("title", ""), re.IGNORECASE)
             if m:
                 result["followers"] = parse_follower_count(m.group(1))
 
@@ -379,6 +379,7 @@ def fetch_ig_profile(ctx: BrowserContext, url: str) -> dict:
         "linktree": None,
         "youtube": None,
     }
+    page = None
     try:
         page = ctx.new_page()
         captured = {"data": None, "count": None}
@@ -419,10 +420,11 @@ def fetch_ig_profile(ctx: BrowserContext, url: str) -> dict:
 
         page.close()
     except Exception:
-        try:
-            page.close()
-        except Exception:
-            pass
+        if page:
+            try:
+                page.close()
+            except Exception:
+                pass
     return result
 
 
@@ -475,6 +477,7 @@ def fetch_all_ig(ctx: BrowserContext, db: sqlite3.Connection) -> None:
 
 
 def fetch_spotify_listeners(ctx: BrowserContext, url: str) -> int | None:
+    page = None
     try:
         page = ctx.new_page()
         page.goto(url, wait_until="networkidle", timeout=20000)
@@ -485,10 +488,11 @@ def fetch_spotify_listeners(ctx: BrowserContext, url: str) -> int | None:
         if m:
             return parse_follower_count(m.group(1))
     except Exception:
-        try:
-            page.close()
-        except Exception:
-            pass
+        if page:
+            try:
+                page.close()
+            except Exception:
+                pass
     return None
 
 

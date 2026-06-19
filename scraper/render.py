@@ -15,7 +15,9 @@ def _load_icon(name: str) -> str:
     if path.exists():
         svg = path.read_text(encoding="utf-8").strip()
         if "<?xml" in svg:
-            svg = svg[svg.index("<svg") :]
+            idx = svg.find("<svg")
+            if idx != -1:
+                svg = svg[idx:]
         svg = svg.replace('width="24"', 'width="18"').replace(
             'height="24"', 'height="18"'
         )
