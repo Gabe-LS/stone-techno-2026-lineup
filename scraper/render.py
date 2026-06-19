@@ -514,11 +514,14 @@ def render_output_html(
         const data = await res.json();
         localPicks = new Set(data.picks);
         readOnly = data.readonly;
-        if (data.edit_code) { editCode = data.edit_code; localStorage.setItem('stc_edit_code', editCode); }
-        if (data.share_code) { shareCode = data.share_code; localStorage.setItem('stc_share_code', shareCode); }
+        editCode = data.edit_code || null;
+        shareCode = data.share_code || null;
+        if (editCode) localStorage.setItem('stc_edit_code', editCode); else localStorage.removeItem('stc_edit_code');
+        if (shareCode) localStorage.setItem('stc_share_code', shareCode); else localStorage.removeItem('stc_share_code');
         saveLocal();
         applyHearts();
         if (readOnly) document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
+        else document.querySelectorAll('.heart-btn').forEach(b => b.style.display = '');
       } catch {}
     }
 
@@ -707,7 +710,10 @@ def render_output_html(
     (async () => {
       const p = new URLSearchParams(location.search);
       const c = p.get('code');
-      if (c) { await loadFromServer(c); connectWS(c); }
+      if (c) {
+        history.replaceState(null, '', location.pathname);
+        await loadFromServer(c); connectWS(c);
+      }
       else if (editCode) { await reconcile(); connectWS(editCode); }
       applyHearts();
     })();
