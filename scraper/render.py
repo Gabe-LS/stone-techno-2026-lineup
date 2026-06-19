@@ -86,6 +86,7 @@ def render_output_html(
     parts.append(f"  <title>{esc(title)}</title>")
     parts.append("  <style>")
     parts.append("""
+    *, *::before, *::after { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 0 auto; padding: 0 24px; color: #111; background: #fff; }
     h1 { margin-bottom: 32px; font-size: 2em; position: sticky; top: 28px; background: #fff; z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
@@ -98,7 +99,7 @@ def render_output_html(
     ul.artist-list { list-style: none; padding: 0; margin: 0; }
     li.artist-item { display: flex; align-items: center; gap: 16px; padding: 12px; margin-bottom: 8px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee; }
     .artist-photo { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; }
+    .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: #eee; border-radius: 6px; }
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: 1.15em; display: block; margin-bottom: 3px; }
     .artist-schedule { color: #888; font-size: 0.85em; display: block; margin-bottom: 6px; }
@@ -116,64 +117,71 @@ def render_output_html(
       h4.location-heading { top: 152px; }
       li.artist-item { gap: 10px; padding: 10px; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
-      .photo-placeholder { width: 72px; height: 72px; }
+      .photo-placeholder { width: 72px; height: 72px; border-radius: 4px; }
       .artist-name { font-size: 1em; }
       .artist-schedule { font-size: 0.75em; margin-bottom: 4px; }
       .links { column-gap: 8px; row-gap: 0; }
       .links a { font-size: 0.68em; min-width: 72px; gap: 3px; }
       .links a svg { width: 14px; height: 14px; }
       .heart-btn svg { width: 18px; height: 18px; }
-      .share-bar { font-size: 0.8em; padding: 8px 12px; }
-      .modal-content { padding: 20px 16px; max-width: 320px; }
-      .modal-tabs { flex-direction: column; }
-      .sync-qr-section { display: none; }
     }
     .heart-btn { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
     .heart-btn svg { fill: none; stroke: #ccc; stroke-width: 2; transition: fill 0.15s, stroke 0.15s; width: 22px; height: 22px; }
-    .heart-btn:hover:not(.active) svg { stroke: #ddd; }
+    .heart-btn:hover:not(.active) svg { stroke: #999; }
+    .heart-btn:focus:not(:focus-visible) { outline: none; }
     .heart-btn.active svg { fill: #e53e3e; stroke: #e53e3e; }
     .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; height: 28px; font-size: 0.75em; }
     .cmd-bar button { background: none; color: #999; border: none; cursor: pointer; padding: 0; font-size: 1em; white-space: nowrap; flex: 1; text-align: center; transition: color 0.1s; letter-spacing: 0.03em; }
     .cmd-bar button:hover { color: #fff; }
-    .cmd-bar button:focus { outline: none; }
+    .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
+    .cmd-bar button:focus:not(:focus-visible) { outline: none; }
     .cmd-bar button.active { color: #e53e3e; }
     .cmd-bar .sep { color: #333; margin: 0; display: flex; align-items: center; }
     .filter-active .artist-item:not(.hearted) { display: none; }
 
     /* --- Modals --- */
-    .mo { display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:100; background:rgba(0,0,0,.4); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); touch-action:none; overscroll-behavior:none; }
-    .mo.open { display:flex; justify-content:center; align-items:flex-start; padding-top:16vh; }
-    .mo-box { background:#fff; border-radius:14px; padding:24px; width:320px; max-width:calc(100vw - 48px); text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); position:relative; }
-    .mo-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
-    .mo-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
-    .mo-box .link-field { display:block; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; word-break:break-all; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; }
-    .mo-box .link-field:hover { background:#eee; }
-    .mo-box .link-field.copied { background:#d4edda; }
-    .mo-box canvas { display:block; margin:10px auto; border-radius:6px; }
-    .mo-box .or-line { display:flex; align-items:center; gap:10px; margin:10px 0; }
-    .mo-box .or-line hr { flex:1; border:none; border-top:1px solid #e0e0e0; }
-    .mo-box .or-line span { color:#bbb; font-size:.78em; }
-    .mo-box .tabs { display:flex; gap:3px; margin-bottom:14px; border-radius:8px; border:1px solid #e0e0e0; padding:3px; background:#f5f5f5; }
-    .mo-box .tabs button { flex:1; background:transparent; border:none; padding:7px 4px; cursor:pointer; font-size:.8em; color:#888; border-radius:5px; transition:color .15s,background .15s; }
-    .mo-box .tabs button:focus { outline:none; }
-    .mo-box .tabs button:hover:not(.on) { background:#eee; color:#555; }
-    .mo-box .tabs button.on { background:#111; color:#fff; }
-    .mo-box .pane { display:none; }
-    .mo-box .pane.on { display:block; }
-    .mo-box .lbl { font-size:.82em; color:#333; text-align:left; margin:0 0 4px; }
-    .mo-box .steps { counter-reset:s; }
-    .mo-box .steps p { text-align:left; font-size:.8em; color:#333; margin:5px 0; padding-left:16px; }
-    .mo-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; }
+    html.scroll-locked, html.scroll-locked body { overflow:hidden; }
+    html.scroll-locked body { position:fixed; width:100%; }
+    .modal-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); padding:24px; }
+    .modal-overlay.open { display:flex; justify-content:center; align-items:center; }
+    .modal-box { background:#fff; border-radius:14px; padding:24px; width:320px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
+    .modal-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
+    .modal-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
+    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; word-break:break-all; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; }
+    .modal-link:hover { background:#eee; }
+    .modal-link.copied { background:#d4edda; }
+    .modal-box canvas { display:block; margin:10px auto; border-radius:6px; }
+    .modal-box .or-line { display:flex; align-items:center; gap:10px; margin:10px 0; }
+    .modal-box .or-line hr { flex:1; border:none; border-top:1px solid #e0e0e0; }
+    .modal-box .or-line span { color:#bbb; font-size:.78em; }
+    .modal-box .tabs { display:flex; gap:3px; margin-bottom:14px; border-radius:8px; border:1px solid #e0e0e0; padding:3px; background:#f5f5f5; }
+    .modal-box .tabs button { flex:1; background:transparent; border:none; padding:7px 4px; cursor:pointer; font-size:.8em; color:#888; border-radius:5px; transition:color .15s,background .15s; }
+    .modal-box .tabs button:focus-visible { outline:1px solid #111; outline-offset:-2px; }
+    .modal-box .tabs button:focus:not(:focus-visible) { outline:none; }
+    .modal-box .tabs button:hover:not(.on) { background:#eee; color:#555; }
+    .modal-box .tabs button.on { background:#111; color:#fff; }
+    .modal-box .pane { display:none; }
+    .modal-box .pane.on { display:block; }
+    .modal-box .lbl { font-size:.82em; color:#333; text-align:left; margin:0 0 4px; }
+    .modal-box .recv-lbl { font-size:.82em; color:#333; text-align:left; margin:10px 0 4px; }
+    .modal-box .steps { counter-reset:s; }
+    .modal-box .steps p { text-align:left; font-size:.8em; color:#333; margin:5px 0; padding-left:16px; }
+    .modal-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; }
     .pin { display:flex; gap:5px; justify-content:center; margin:10px 0; }
-    .pin span, .pin input { width:28px; height:36px; text-align:center; font-size:1.2em; font-weight:700; border:1px solid #ddd; border-radius:5px; background:#f5f5f5; color:#111; line-height:36px; display:block; }
-    .pin input { padding:0; caret-color:#111; }
-    .pin input:focus { outline:none; border-color:#111; background:#fff; }
-    .mo-box .btn { background:#111; color:#fff; border:none; padding:7px 18px; border-radius:5px; cursor:pointer; font-size:.82em; margin-top:8px; }
-    .mo-box .btn:hover { background:#333; }
-    .mo-box .btn:focus { outline:none; }
+    .pin span { width:28px; height:36px; font-size:1.2em; font-weight:700; border:1px solid #ddd; border-radius:5px; background:#f5f5f5; color:#111; display:flex; align-items:center; justify-content:center; line-height:1; }
+    .pin-wrap { position:relative; cursor:text; margin:10px 0; -webkit-tap-highlight-color:transparent; }
+    .pin-wrap .pin { pointer-events:none; }
+    .pin-wrap .pin span.active { border-color:#111; background:#fff; }
+    .pin-wrap.focused .pin span.active:empty::after { content:''; width:2px; height:1.2em; background:#111; border-radius:1px; animation:blink 1s step-end infinite; }
+    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+    .pin-wrap .pin span.filled { color:#111; }
+    .pin-real { position:absolute; inset:0; opacity:0; font-size:16px; width:100%; height:100%; border:none; padding:0; margin:0; -webkit-tap-highlight-color:transparent; }
+    .modal-box .btn { background:#111; color:#fff; border:none; padding:7px 18px; border-radius:5px; cursor:pointer; font-size:.82em; margin-top:8px; }
+    .modal-box .btn:hover { background:#333; }
+    .modal-box .btn:focus-visible { outline:1px solid #111; outline-offset:2px; }
+    .modal-box .btn:focus:not(:focus-visible) { outline:none; }
     .qr-wrap { display:block; }
-    @media (max-width:480px) { .qr-wrap { display:none; } .mo-box .tabs { flex-direction:column; } .mo.open { padding-top:10vh; } }
-    @media (max-height:500px) { .mo.open { padding-top:5vh; } }
+    @media (max-width:480px) { .qr-wrap { display:none; } .modal-box .tabs { flex-direction:column; } }
     """)
     parts.append("  </style>")
     parts.append("</head>")
@@ -190,32 +198,32 @@ def render_output_html(
     parts.append(f"  <h1>{esc(title)}</h1>")
 
     # Share modal
-    parts.append('  <div class="mo" id="m-share" onclick="closeMo(this)">')
-    parts.append('    <div class="mo-box" onclick="event.stopPropagation()">')
-    parts.append("      <h3>Share With Friends</h3>")
+    parts.append(
+        '  <div class="modal-overlay" id="m-share" role="dialog" aria-modal="true" aria-labelledby="m-share-title">'
+    )
+    parts.append('    <div class="modal-box">')
+    parts.append('      <h3 id="m-share-title">Share With Friends</h3>')
     parts.append(
         '      <p class="sub">Friends can view your picks. Click the link to copy it.</p>'
     )
     parts.append(
-        '      <div class="link-field" id="share-link" onclick="copyLink(this)"></div>'
+        '      <button type="button" class="modal-link" id="share-link"></button>'
     )
     parts.append("    </div>")
     parts.append("  </div>")
 
     # Sync modal
-    pin_inputs = "".join(
-        f'<input class="pin-input" type="text" inputmode="numeric" maxlength="1" autocomplete="off" data-i="{i}"/>'
-        for i in range(6)
+    parts.append(
+        '  <div class="modal-overlay" id="m-sync" role="dialog" aria-modal="true" aria-labelledby="m-sync-title">'
     )
-    parts.append('  <div class="mo" id="m-sync" onclick="closeMo(this)">')
-    parts.append('    <div class="mo-box" onclick="event.stopPropagation()">')
-    parts.append("      <h3>Sync Your Devices</h3>")
+    parts.append('    <div class="modal-box">')
+    parts.append('      <h3 id="m-sync-title">Sync Your Devices</h3>')
     parts.append('      <div class="tabs">')
     parts.append(
-        '        <button class="on" onclick="syncTab(\'send\',this)">Send to another device</button>'
+        '        <button type="button" class="on" onclick="syncTab(\'send\',this)">Send to another device</button>'
     )
     parts.append(
-        "        <button onclick=\"syncTab('recv',this)\">Receive from another device</button>"
+        '        <button type="button" onclick="syncTab(\'recv\',this)">Receive from another device</button>'
     )
     parts.append("      </div>")
     parts.append('      <div class="pane on" id="p-send">')
@@ -239,10 +247,18 @@ def render_output_html(
     parts.append("          <p>Click <strong>Sync</strong></p>")
     parts.append("          <p>Click <strong>Send to another device</strong></p>")
     parts.append("        </div>")
-    parts.append('        <p class="lbl" style="margin-top:10px">On this device:</p>')
+    parts.append('        <p class="recv-lbl">On this device:</p>')
     parts.append('        <div class="steps"><p>Enter the code</p></div>')
-    parts.append(f'        <div class="pin" id="pin-input">{pin_inputs}</div>')
-    parts.append('        <button class="btn" onclick="submitPin()">Connect</button>')
+    pin_spans = "<span></span>" * 6
+    parts.append(
+        f'        <div class="pin-wrap" id="pin-wrap">'
+        f'<div class="pin" id="pin-boxes">{pin_spans}</div>'
+        f'<input class="pin-real" id="pin-input" type="text" inputmode="numeric" maxlength="6" autocomplete="off"/>'
+        f"</div>"
+    )
+    parts.append(
+        '        <button type="button" class="btn" onclick="submitPin()">Connect</button>'
+    )
     parts.append("      </div>")
     parts.append("    </div>")
     parts.append("  </div>")
@@ -374,12 +390,6 @@ def render_output_html(
     let localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]'));
     let readOnly = false;
     let filterActive = false;
-
-    // Blur buttons after click, ESC to close modals
-    document.addEventListener('click', e => { if (e.target.matches('button')) e.target.blur(); });
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible')); document.body.classList.remove('modal-open'); }
-    });
 
     function saveLocal() {
       localStorage.setItem('stc_picks', JSON.stringify([...localPicks]));
@@ -540,26 +550,61 @@ def render_output_html(
       _ws.onclose = () => { setTimeout(() => { if (editCode || shareCode) connectWS(code); }, 2000); };
     }
 
-    // Modal helpers
-    // Scroll lock (PQINA technique — works on iOS Safari)
-    function _blockTouch(e) { e.preventDefault(); }
-    function openMo(id) {
-      const mo = document.getElementById(id);
-      mo.classList.add('open');
-      mo.addEventListener('touchmove', _blockTouch, {passive:false});
+    // Modal system
+    let _modalTrigger = null;
+    function _fitToViewport() {
+      const m = document.querySelector('.modal-overlay.open');
+      if (!m || !window.visualViewport) return;
+      const box = m.querySelector('.modal-box');
+      const vh = visualViewport.height;
+      const ot = visualViewport.offsetTop;
+      const bh = box.offsetHeight;
+      box.style.transform = 'translateY(' + (ot + (vh - bh) / 2 - (window.innerHeight - bh) / 2) + 'px)';
     }
-    function closeMo(el) {
-      const mo = el.closest ? el.closest('.mo') : el;
-      mo.removeEventListener('touchmove', _blockTouch);
-      mo.classList.remove('open');
-    }
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        const open = document.querySelectorAll('.mo.open');
-        if (open.length) { open.forEach(m => { m.removeEventListener('touchmove', _blockTouch); m.classList.remove('open'); }); }
+    function openDialog(id) {
+      _modalTrigger = document.activeElement;
+      document.body.style.top = '-' + window.scrollY + 'px';
+      document.documentElement.classList.add('scroll-locked');
+      document.getElementById(id).classList.add('open');
+      if (window.visualViewport) {
+        visualViewport.addEventListener('resize', _fitToViewport);
+        visualViewport.addEventListener('scroll', _fitToViewport);
       }
+    }
+    function closeDialog(id) {
+      if (window.visualViewport) {
+        visualViewport.removeEventListener('resize', _fitToViewport);
+        visualViewport.removeEventListener('scroll', _fitToViewport);
+      }
+      const m = document.getElementById(id);
+      m.classList.remove('open');
+      const box = m.querySelector('.modal-box');
+      box.style.transform = '';
+      pinField.value = '';
+      syncPinDisplay();
+      const scrollY = document.body.style.top;
+      document.body.style.top = '';
+      document.documentElement.classList.remove('scroll-locked');
+      window.scrollTo(0, parseInt(scrollY || '0') * -1);
+      if (_modalTrigger) { _modalTrigger.focus(); _modalTrigger = null; }
+    }
+    document.querySelectorAll('.modal-overlay').forEach(ov => {
+      ov.addEventListener('click', e => { if (e.target === ov) closeDialog(ov.id); });
+      ov.addEventListener('touchmove', e => {
+        if (!e.target.closest('.modal-box')) e.preventDefault();
+      }, { passive: false });
     });
-    document.addEventListener('click', e => { if (e.target.matches('button')) e.target.blur(); });
+    document.addEventListener('keydown', e => {
+      const modal = document.querySelector('.modal-overlay.open');
+      if (!modal) return;
+      if (e.key === 'Escape') { closeDialog(modal.id); return; }
+      if (e.key !== 'Tab') return;
+      const focusable = [...modal.querySelectorAll('button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
 
     function loadQR(id, url) {
       const c = document.getElementById(id);
@@ -571,65 +616,68 @@ def render_output_html(
     }
 
     // Share modal
+    const shareLink = document.getElementById('share-link');
+    shareLink.addEventListener('click', () => {
+      const url = shareLink.textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        shareLink.classList.add('copied');
+        shareLink.textContent = 'Copied!';
+        setTimeout(() => { shareLink.textContent = url; shareLink.classList.remove('copied'); }, 1500);
+      });
+    });
     function openShareModal() {
       if (!shareCode) { alert('Heart an artist first.'); return; }
-      document.getElementById('share-link').textContent = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
-      openMo('m-share');
-    }
-    function copyLink(el) {
-      navigator.clipboard.writeText(el.textContent);
-      el.classList.add('copied');
-      const t = el.textContent; el.textContent = 'Copied!';
-      setTimeout(() => { el.textContent = t; el.classList.remove('copied'); }, 1500);
+      shareLink.textContent = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
+      openDialog('m-share');
     }
 
     // Sync modal
     async function openSyncModal() {
       await ensureSession();
       if (!editCode) { alert('Heart an artist first.'); return; }
+      document.querySelectorAll('#m-sync .tabs button').forEach(b => b.classList.remove('on'));
+      document.querySelector('#m-sync .tabs button').classList.add('on');
+      document.getElementById('p-send').classList.add('on');
+      document.getElementById('p-recv').classList.remove('on');
       const d = document.getElementById('pin-display');
       d.innerHTML = '';
       for (const ch of editCode) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
       loadQR('sync-qr', 'https://stonetechno.deftlab.dev/?code=' + editCode);
-      openMo('m-sync');
+      openDialog('m-sync');
     }
     function syncTab(t, btn) {
       btn.closest('.tabs').querySelectorAll('button').forEach(b => b.classList.remove('on'));
       btn.classList.add('on');
       document.getElementById('p-send').classList.toggle('on', t === 'send');
       document.getElementById('p-recv').classList.toggle('on', t === 'recv');
-      if (t === 'recv') { const f = document.querySelector('#pin-input input'); if (f) f.focus(); }
     }
 
-    // Pin inputs
-    document.querySelectorAll('#pin-input input').forEach(inp => {
-      inp.addEventListener('input', e => {
-        const v = e.target.value.replace(/\\D/g, '');
-        e.target.value = v.slice(0, 1);
-        const i = +e.target.dataset.i;
-        if (v && i < 5) { const nx = e.target.parentElement.querySelector('[data-i="'+(i+1)+'"]'); if (nx) nx.focus(); }
-        if (v && i === 5) submitPin();
+    // Pin input (hidden input + visual boxes)
+    const pinField = document.getElementById('pin-input');
+    const pinBoxes = [...document.querySelectorAll('#pin-boxes span')];
+    function syncPinDisplay() {
+      const val = pinField.value;
+      const cursor = val.length >= 6 ? 5 : val.length;
+      pinBoxes.forEach((b, i) => {
+        b.textContent = val[i] || '';
+        b.classList.toggle('filled', i < val.length);
+        b.classList.toggle('active', i === cursor);
       });
-      inp.addEventListener('keydown', e => {
-        if (e.key === 'Backspace' && !e.target.value) {
-          const i = +e.target.dataset.i;
-          if (i > 0) { const pv = e.target.parentElement.querySelector('[data-i="'+(i-1)+'"]'); if (pv) { pv.value=''; pv.focus(); } }
-        }
-      });
-      inp.addEventListener('paste', e => {
-        e.preventDefault();
-        const t = (e.clipboardData.getData('text')||'').replace(/\\D/g,'').slice(0,6);
-        const all = document.querySelectorAll('#pin-input input');
-        for (let j=0; j<t.length&&j<6; j++) all[j].value=t[j];
-        if (t.length===6) submitPin(); else if (t.length) all[Math.min(t.length,5)].focus();
-      });
+    }
+    pinField.addEventListener('input', () => {
+      pinField.value = pinField.value.replace(/\\D/g, '').slice(0, 6);
+      syncPinDisplay();
     });
+    pinField.addEventListener('focus', () => { document.getElementById('pin-wrap').classList.add('focused'); syncPinDisplay(); });
+    pinField.addEventListener('blur', () => { document.getElementById('pin-wrap').classList.remove('focused'); pinBoxes.forEach(b => b.classList.remove('active')); });
+    document.getElementById('pin-wrap').addEventListener('click', () => pinField.focus());
     function submitPin() {
-      const code = Array.from(document.querySelectorAll('#pin-input input')).map(i=>i.value).join('');
-      if (code.length!==6) return;
+      const code = pinField.value.replace(/\\D/g, '');
+      if (code.length !== 6) return;
       loadFromServer(code);
-      closeMo(document.getElementById('m-sync'));
-      document.querySelectorAll('#pin-input input').forEach(i=>i.value='');
+      closeDialog('m-sync');
+      pinField.value = '';
+      syncPinDisplay();
     }
 
     // Init
