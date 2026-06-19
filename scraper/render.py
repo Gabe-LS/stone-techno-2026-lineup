@@ -405,7 +405,7 @@ def render_output_html(
     document.querySelectorAll('.fade-after').forEach(el => {
       const top = parseFloat(getComputedStyle(el).top) || 0;
       const s = document.createElement('div');
-      s.style.cssText = 'height:1px;width:0;pointer-events:none;visibility:hidden;margin-bottom:-1px;position:relative;top:-' + top + 'px';
+      s.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;top:-' + top + 'px';
       el.parentNode.insertBefore(s, el);
       new IntersectionObserver(([e]) => {
         el.classList.toggle('stuck', e.intersectionRatio === 0);
