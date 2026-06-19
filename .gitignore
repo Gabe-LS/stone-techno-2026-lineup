@@ -16,6 +16,3 @@ lineup.db
 
 # Generated output
 output/
-
-# Old deploy repo (to be replaced by VPS rsync)
-.deploy/

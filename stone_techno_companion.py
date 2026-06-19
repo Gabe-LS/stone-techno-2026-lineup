@@ -54,30 +54,6 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
     print("Deployed to https://stonetechno.deftlab.dev/")
 
 
-def deploy_to_gh(output_dir: Path, output_path: Path) -> None:
-    deploy_dir = PROJECT_ROOT / ".deploy"
-    if not (deploy_dir / ".git").is_dir():
-        print("ERROR: .deploy/ repo not found.")
-        return
-    shutil.copy2(output_path, deploy_dir / "index.html")
-    photos_src = output_dir / "photos"
-    photos_dst = deploy_dir / "photos"
-    if photos_src.is_dir():
-        if photos_dst.is_dir():
-            shutil.rmtree(photos_dst)
-        shutil.copytree(photos_src, photos_dst)
-    subprocess.run(["git", "add", "-A"], cwd=deploy_dir, check=True)
-    result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=deploy_dir)
-    if result.returncode == 0:
-        print("No changes to deploy.")
-    else:
-        subprocess.run(
-            ["git", "commit", "-m", "Update lineup"], cwd=deploy_dir, check=True
-        )
-        subprocess.run(["git", "push"], cwd=deploy_dir, check=True)
-        print("Deployed to GitHub Pages.")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="stone_techno_companion",
@@ -104,11 +80,6 @@ def main() -> None:
     )
     parser.add_argument(
         "--deploy", action="store_true", help="Deploy to VPS after generating"
-    )
-    parser.add_argument(
-        "--deploy-gh",
-        action="store_true",
-        help="Deploy to GitHub Pages after generating",
     )
     args = parser.parse_args()
 
@@ -170,8 +141,6 @@ def main() -> None:
 
     if args.deploy:
         deploy_to_vps(output_dir, output_path)
-    if args.deploy_gh:
-        deploy_to_gh(output_dir, output_path)
 
 
 if __name__ == "__main__":
