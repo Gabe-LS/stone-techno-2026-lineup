@@ -252,7 +252,15 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
     return assignments
 
 
+_VALID_FIELDS = {
+    "ig_followers", "sc_followers", "spotify_listeners",
+    "instagram", "soundcloud", "spotify", "linktree", "youtube", "photo_local",
+}
+
+
 def update_artist_field(db: sqlite3.Connection, oid: str, field: str, value) -> None:
+    if field not in _VALID_FIELDS:
+        raise ValueError(f"Invalid field: {field}")
     db.execute(f"UPDATE artists SET {field} = ? WHERE overlay_id = ?", (value, oid))
     db.commit()
 

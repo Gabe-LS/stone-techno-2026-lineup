@@ -52,13 +52,14 @@ def encode_avif_to_target(ref_im: pyvips.Image, out_path: str, target: float) ->
             )
             decoded = f"{tmp_dir}/decoded.png"
             subprocess.run(
-                ["vips", "copy", candidate, decoded], check=True, capture_output=True
+                ["vips", "copy", candidate, decoded], check=True, capture_output=True, timeout=30
             )
             result = subprocess.run(
                 ["ssimulacra2", ref_png, decoded],
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
             score = float(result.stdout.strip())
             if score < target:
@@ -71,13 +72,14 @@ def encode_avif_to_target(ref_im: pyvips.Image, out_path: str, target: float) ->
         )
         decoded = f"{tmp_dir}/final_decoded.png"
         subprocess.run(
-            ["vips", "copy", out_path, decoded], check=True, capture_output=True
+            ["vips", "copy", out_path, decoded], check=True, capture_output=True, timeout=30
         )
         result = subprocess.run(
             ["ssimulacra2", ref_png, decoded],
             check=True,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         return float(result.stdout.strip())
 
@@ -99,14 +101,19 @@ def process_artist_photos(db: sqlite3.Connection, photos_dir: Path) -> None:
         )[0]
         print(f"  [{i}/{total}] {name}", end="", flush=True)
         filename = f"{overlay_id}.avif"
-        out_path = photos_dir / filename
+        out_path = (photos_dir / filename).resolve()
+        if out_path.parent != photos_dir.resolve():
+            raise ValueError(f"Unsafe overlay_id: {overlay_id}")
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 raw_path = f"{tmp_dir}/original"
                 req = Request(photo_url, headers={"User-Agent": "Mozilla/5.0"})
                 with urlopen(req, timeout=30) as resp:
+                    data = resp.read(20 * 1024 * 1024 + 1)
+                    if len(data) > 20 * 1024 * 1024:
+                        raise ValueError("Photo exceeds 20MB")
                     with open(raw_path, "wb") as f:
-                        f.write(resp.read())
+                        f.write(data)
                 ref_im = resize_and_crop(raw_path, 240)
                 score = encode_avif_to_target(ref_im, str(out_path), SSIMULACRA2_TARGET)
             save_photo_local(db, overlay_id, filename)

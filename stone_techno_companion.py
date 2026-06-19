@@ -132,7 +132,7 @@ def main() -> None:
         db.commit()
 
     if not args.no_photos:
-        process_artist_photos(db, PHOTOS_DIR)
+        process_artist_photos(db, output_dir / "photos")
 
     ordered_sections = load_sections_from_db(db)
     all_locations = load_locations_from_db(db)

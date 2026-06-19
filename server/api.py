@@ -93,11 +93,11 @@ async def _broadcast(
 ) -> None:
     msg = json.dumps({"picks": picks})
     dead = set()
-    for ws in _ws_clients.get(edit_code, set()):
+    for ws in list(_ws_clients.get(edit_code, set())):
         if ws is exclude:
             continue
         try:
-            await ws.send_text(msg)
+            await asyncio.wait_for(ws.send_text(msg), timeout=5.0)
         except Exception:
             dead.add(ws)
     _ws_clients[edit_code] -= dead
@@ -203,9 +203,10 @@ async def remove_pick(code: str, artist_id: str, request: Request):
         if readonly:
             raise HTTPException(403, "Read-only session")
         db.execute(
-            """UPDATE sessions SET picks = (
-                SELECT json_group_array(value) FROM json_each(picks)
-                WHERE value != ?
+            """UPDATE sessions SET picks = COALESCE(
+                (SELECT json_group_array(value) FROM json_each(picks)
+                 WHERE value != ?),
+                '[]'
             ), updated_at = datetime('now')
             WHERE edit_code = ?""",
             (artist_id, edit_code),
@@ -253,6 +254,7 @@ async def ws_sync(ws: WebSocket, code: str):
             del _ws_clients[edit_code]
 
 
+(STATIC_DIR / "photos").mkdir(parents=True, exist_ok=True)
 app.mount("/photos", StaticFiles(directory=str(STATIC_DIR / "photos")), name="photos")
 
 

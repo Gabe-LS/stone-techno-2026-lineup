@@ -399,7 +399,7 @@ def render_output_html(
     const API = '/api';
     let editCode = localStorage.getItem('stc_edit_code');
     let shareCode = localStorage.getItem('stc_share_code');
-    let localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]'));
+    let localPicks; try { localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]')); } catch { localPicks = new Set(); localStorage.removeItem('stc_picks'); }
     let readOnly = false;
     let filterActive = false;
 
@@ -562,7 +562,7 @@ def render_output_html(
           }
         } catch {}
       };
-      _ws.onclose = () => { setTimeout(() => { if (editCode || shareCode) connectWS(code); }, 2000); };
+      _ws.onclose = (ev) => { if (ev.code === 1008) return; setTimeout(() => { const cur = editCode || shareCode; if (cur === code) connectWS(code); }, 2000); };
     }
 
     // Modal system
