@@ -237,6 +237,9 @@ def create_sync_pin(code: str, request: Request):
         db.close()
     now = time.monotonic()
     with _sync_lock:
+        old = [p for p, (sid, _) in _sync_pins.items() if sid == session_id]
+        for p in old:
+            del _sync_pins[p]
         for _ in range(50):
             pin = f"{secrets.randbelow(1000000):06d}"
             existing = _sync_pins.get(pin)
