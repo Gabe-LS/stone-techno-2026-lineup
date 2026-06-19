@@ -152,7 +152,7 @@ def render_output_html(
     .modal-box { background:#fff; border-radius:14px; padding:24px; width:420px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
     .modal-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
     .modal-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
-    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; overflow:hidden; text-overflow:clip; white-space:nowrap; box-sizing:border-box; }
+    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; overflow:hidden; text-overflow:clip; white-space:nowrap; box-sizing:border-box; outline:none; }
     .modal-link:hover { background:#eee; }
     .modal-link.copied { background:#d4edda; text-align:center; }
     .modal-box canvas { display:block; margin:10px auto; border-radius:6px; }
@@ -211,9 +211,9 @@ def render_output_html(
         '  <div class="modal-overlay" id="m-share" role="dialog" aria-modal="true" aria-labelledby="m-share-title">'
     )
     parts.append('    <div class="modal-box">')
-    parts.append('      <h3 id="m-share-title">Share With Friends</h3>')
+    parts.append('      <h3 id="m-share-title">Share My Picks</h3>')
     parts.append(
-        '      <p class="sub">Friends can view your picks. Click the link to copy it.</p>'
+        '      <p class="sub" style="color:inherit">Friends can view your picks. Click the link to copy it.</p>'
     )
     parts.append(
         '      <input type="text" readonly class="modal-link" id="share-link">'
