@@ -481,6 +481,7 @@ def render_output_html(
 
     function toggleFilter(btn) {
       filterActive = !filterActive;
+      track(filterActive ? 'filter-on' : 'filter-off');
       document.body.classList.toggle('filter-active', filterActive);
       btn.classList.toggle('active', filterActive);
       updateUI();
@@ -539,11 +540,15 @@ def render_output_html(
       return _sessionPromise;
     }
 
+    function track(event, data) { if (typeof umami !== 'undefined') umami.track(event, data); }
+
     async function toggleHeart(btn) {
       if (readOnly) return;
       const li = btn.closest('[data-artist-id]');
       const id = li.dataset.artistId;
       const adding = !localPicks.has(id);
+      const name = li.querySelector('.artist-name')?.textContent || id;
+      track(adding ? 'heart' : 'unheart', {artist: name});
 
       if (adding) localPicks.add(id); else localPicks.delete(id);
       btn.classList.toggle('active', adding);
@@ -639,6 +644,7 @@ def render_output_html(
         try {
           const data = JSON.parse(e.data);
           if (data.sync_complete) {
+            track('sync-complete');
             if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
             document.getElementById('sync-pending').style.display = 'none';
             document.getElementById('sync-done').style.display = '';
@@ -746,6 +752,7 @@ def render_output_html(
       shareLink.select();
       const url = shareLink.value;
       navigator.clipboard.writeText(url).then(() => {
+        track('share-copy');
         shareLink.classList.add('copied');
         shareLink.value = 'Copied!';
         setTimeout(() => { shareLink.value = url; shareLink.classList.remove('copied'); }, 1500);
@@ -753,6 +760,7 @@ def render_output_html(
     });
     function openShareModal() {
       if (!shareToken) { alert('Heart an artist first.'); return; }
+      track('share-open');
       shareLink.value = location.origin + '/?code=' + shareToken;
       openDialog('m-share');
     }
@@ -793,6 +801,7 @@ def render_output_html(
     async function openSyncModal() {
       await ensureSession();
       if (!sessionId) { alert('Heart an artist first.'); return; }
+      track('sync-open');
       document.getElementById('sync-pending').style.display = '';
       document.getElementById('sync-done').style.display = 'none';
       document.querySelectorAll('#m-sync .tabs button').forEach(b => b.classList.remove('on'));
