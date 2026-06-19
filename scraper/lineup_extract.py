@@ -18,8 +18,9 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import BrowserContext, sync_playwright
 
 STONE_TECHNO_URL = "https://www.stone-techno.com/"
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output"
-DB_PATH = Path(__file__).resolve().parent / "lineup.db"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
+DB_PATH = PROJECT_ROOT / "lineup.db"
 PHOTOS_DIR = DEFAULT_OUTPUT_DIR / "photos"
 OVERRIDES_PATH = Path(__file__).resolve().parent / "overrides.toml"
 SSIMULACRA2_TARGET = 78.0
@@ -988,7 +989,7 @@ def render_output_html(
     h3.period-heading { position: sticky; top: 122px; background: #fff; z-index: 10; padding: 8px 0 6px; margin: 24px 0 12px; font-size: 1.15em; color: #333; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: none; }
     .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
     .fade-after.stuck::after { opacity: 1; }
-    h4.location-heading { position: sticky; top: 152px; background: #fff; z-index: 10; font-size: 1em; padding: 6px 0 4px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #eee; }
+    h4.location-heading { position: sticky; top: 162px; background: #fff; z-index: 10; font-size: 1em; padding: 6px 0 4px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #eee; }
     h4.location-heading small { font-weight: normal; color: #999; }
     ul.artist-list { list-style: none; padding: 0; margin: 0; }
     li.artist-item { display: flex; align-items: center; gap: 16px; padding: 12px; margin-bottom: 8px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee; }
@@ -1174,6 +1175,11 @@ def main() -> None:
     parser.add_argument(
         "--refresh-photos", action="store_true", help="Re-process all photos"
     )
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help="Deploy output to GitHub Pages after generating",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -1230,6 +1236,35 @@ def main() -> None:
 
     output_path.write_text(output_html, encoding="utf-8")
     print(f"Wrote {output_path}")
+
+    if args.deploy:
+        deploy_dir = PROJECT_ROOT / ".deploy"
+        if not (deploy_dir / ".git").is_dir():
+            print("ERROR: .deploy/ repo not found. Clone the deploy repo first.")
+        else:
+            import shutil
+
+            shutil.copy2(output_path, deploy_dir / "index.html")
+            photos_src = output_dir / "photos"
+            photos_dst = deploy_dir / "photos"
+            if photos_src.is_dir():
+                if photos_dst.is_dir():
+                    shutil.rmtree(photos_dst)
+                shutil.copytree(photos_src, photos_dst)
+            subprocess.run(["git", "add", "-A"], cwd=deploy_dir, check=True)
+            result = subprocess.run(
+                ["git", "diff", "--cached", "--quiet"], cwd=deploy_dir
+            )
+            if result.returncode == 0:
+                print("No changes to deploy.")
+            else:
+                subprocess.run(
+                    ["git", "commit", "-m", "Update lineup"],
+                    cwd=deploy_dir,
+                    check=True,
+                )
+                subprocess.run(["git", "push"], cwd=deploy_dir, check=True)
+                print("Deployed to GitHub Pages.")
 
 
 if __name__ == "__main__":
