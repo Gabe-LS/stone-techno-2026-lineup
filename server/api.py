@@ -422,6 +422,14 @@ async def api_not_found(path: str):
 app.mount("/photos", StaticFiles(directory=str(STATIC_DIR / "photos")), name="photos")
 
 
+@app.get("/favicon.svg")
+async def serve_favicon():
+    file_path = STATIC_DIR / "favicon.svg"
+    if file_path.exists():
+        return FileResponse(file_path, media_type="image/svg+xml")
+    raise HTTPException(404, "Not found")
+
+
 @app.get("/{path:path}")
 async def serve_index(path: str):
     file_path = STATIC_DIR / "index.html"
