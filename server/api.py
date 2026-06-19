@@ -188,6 +188,7 @@ def create_session(request: Request):
     db = _get_db()
     try:
         for _ in range(50):
+            # 6-digit numeric codes: short enough for users to type in the sync PIN modal
             edit_code = f"{secrets.randbelow(1000000):06d}"
             share_code = f"{secrets.randbelow(1000000):06d}"
             if edit_code == share_code:
@@ -327,8 +328,8 @@ async def ws_sync(ws: WebSocket, code: str):
             json.dumps({"picks": json.loads(picks_json), "readonly": readonly})
         )
         while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
+            await asyncio.wait_for(ws.receive_text(), timeout=3600)
+    except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     finally:
         if edit_code in _ws_clients:

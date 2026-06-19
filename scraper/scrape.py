@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import BrowserContext
 
 from .db import get_artist, get_missing, update_artist_field
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -36,10 +39,10 @@ def is_valid_url(url: str | None) -> bool:
 def is_youtube_channel(url: str) -> bool:
     if not url:
         return False
-    lower = url.lower()
-    if "youtube.com" not in lower:
-        return False
     parsed = urlparse(url)
+    host = parsed.netloc.lower().split(":")[0]
+    if host != "youtube.com" and not host.endswith(".youtube.com"):
+        return False
     path = parsed.path.rstrip("/").lower()
     if any(path.startswith(p) for p in ("/c/", "/channel/", "/user/", "/@")):
         return True
@@ -50,10 +53,10 @@ def is_sc_profile(url: str) -> bool:
     if not url:
         return False
     parsed = urlparse(url)
-    netloc = parsed.netloc.lower()
-    if netloc in ("on.soundcloud.com",):
+    host = parsed.netloc.lower().split(":")[0]
+    if host == "on.soundcloud.com":
         return False
-    if "soundcloud.com" not in netloc:
+    if host != "soundcloud.com" and not host.endswith(".soundcloud.com"):
         return False
     segments = [s for s in parsed.path.strip("/").split("/") if s]
     return len(segments) == 1
@@ -242,6 +245,7 @@ def fetch_sc_profile(ctx: BrowserContext, url: str) -> dict:
             elif not result["youtube"] and is_youtube_channel(real_url):
                 result["youtube"] = real_url
     except Exception:
+        logger.warning("Failed to fetch SoundCloud profile %s", url, exc_info=True)
         if page:
             try:
                 page.close()
@@ -423,6 +427,7 @@ def fetch_ig_profile(ctx: BrowserContext, url: str) -> dict:
 
         page.close()
     except Exception:
+        logger.warning("Failed to fetch Instagram profile %s", url, exc_info=True)
         if page:
             try:
                 page.close()
@@ -491,6 +496,7 @@ def fetch_spotify_listeners(ctx: BrowserContext, url: str) -> int | None:
         if m:
             return parse_follower_count(m.group(1))
     except Exception:
+        logger.warning("Failed to fetch Spotify profile %s", url, exc_info=True)
         if page:
             try:
                 page.close()

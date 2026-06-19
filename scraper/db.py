@@ -127,6 +127,8 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
                     assignment.get("location_id"),
                 ),
             )
+    elif parsed["artists"]:
+        print("WARNING: Scrape returned artists but no assignments - keeping existing lineup data")
     db.commit()
 
 
