@@ -478,6 +478,9 @@ def render_output_html(
         localStorage.setItem('stc_edit_code', editCode);
         localStorage.setItem('stc_share_code', shareCode);
         connectWS(editCode);
+        for (const id of localPicks) {
+          fetch(API + '/session/' + editCode + '/pick/' + id, {method: 'POST'}).catch(() => {});
+        }
       } catch {}
     }
 
@@ -516,11 +519,13 @@ def render_output_html(
         const data = await res.json();
         localPicks = new Set(data.picks);
         readOnly = data.readonly;
-        editCode = data.edit_code || null;
-        shareCode = data.share_code || null;
-        if (editCode) localStorage.setItem('stc_edit_code', editCode); else localStorage.removeItem('stc_edit_code');
-        if (shareCode) localStorage.setItem('stc_share_code', shareCode); else localStorage.removeItem('stc_share_code');
-        saveLocal();
+        if (!readOnly) {
+          editCode = data.edit_code || null;
+          shareCode = data.share_code || null;
+          if (editCode) localStorage.setItem('stc_edit_code', editCode); else localStorage.removeItem('stc_edit_code');
+          if (shareCode) localStorage.setItem('stc_share_code', shareCode); else localStorage.removeItem('stc_share_code');
+          saveLocal();
+        }
         applyHearts();
         if (readOnly) document.querySelectorAll('.heart-btn').forEach(b => b.style.display = 'none');
         else document.querySelectorAll('.heart-btn').forEach(b => b.style.display = '');
@@ -545,11 +550,13 @@ def render_output_html(
 
     // WebSocket real-time sync
     let _ws = null;
+    let _wsDelay = 2000;
     function connectWS(code) {
       if (_ws) { try { _ws.close(); } catch {} }
       if (!code) return;
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       _ws = new WebSocket(proto + '//' + location.host + '/ws/' + code);
+      _ws.onopen = () => { _wsDelay = 2000; };
       _ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -564,7 +571,7 @@ def render_output_html(
           }
         } catch {}
       };
-      _ws.onclose = (ev) => { if (ev.code === 1008) return; setTimeout(() => { const cur = editCode || shareCode; if (cur === code) connectWS(code); }, 2000); };
+      _ws.onclose = (ev) => { if (ev.code === 1008) return; setTimeout(() => { const cur = editCode || shareCode; if (cur === code) connectWS(code); }, _wsDelay + Math.random() * 1000); _wsDelay = Math.min(_wsDelay * 2, 60000); };
     }
 
     // Modal system
@@ -655,7 +662,7 @@ def render_output_html(
     });
     function openShareModal() {
       if (!shareCode) { alert('Heart an artist first.'); return; }
-      shareLink.textContent = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
+      shareLink.textContent = location.origin + '/?code=' + shareCode;
       openDialog('m-share');
     }
 
@@ -670,7 +677,7 @@ def render_output_html(
       const d = document.getElementById('pin-display');
       d.innerHTML = '';
       for (const ch of editCode) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
-      loadQR('sync-qr', 'https://stonetechno.deftlab.dev/?code=' + editCode);
+      loadQR('sync-qr', location.origin + '/?code=' + editCode);
       openDialog('m-sync');
     }
     function syncTab(t, btn) {

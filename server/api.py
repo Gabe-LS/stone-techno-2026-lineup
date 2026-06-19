@@ -266,7 +266,6 @@ async def ws_sync(ws: WebSocket, code: str):
     try:
         edit_code, _, picks_json, readonly = _find_session(db, code)
     except HTTPException:
-        db.close()
         await ws.close(code=1008)
         return
     finally:
@@ -286,6 +285,11 @@ async def ws_sync(ws: WebSocket, code: str):
             _ws_clients[edit_code].discard(ws)
             if not _ws_clients[edit_code]:
                 del _ws_clients[edit_code]
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def api_not_found(path: str):
+    raise HTTPException(404, "Not found")
 
 
 (STATIC_DIR / "photos").mkdir(parents=True, exist_ok=True)

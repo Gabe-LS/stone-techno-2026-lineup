@@ -77,11 +77,23 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
             "ON CONFLICT(timestamp_key) DO UPDATE SET date=excluded.date, period=excluded.period, position=excluded.position",
             (sec["key"], sec["date"], sec["period"], pos),
         )
+    if parsed["sections"]:
+        current_keys = [sec["key"] for sec in parsed["sections"]]
+        db.execute(
+            f"DELETE FROM sections WHERE timestamp_key NOT IN ({','.join('?' * len(current_keys))})",
+            current_keys,
+        )
     for loc_id, loc in parsed["locations"].items():
         db.execute(
             "INSERT INTO locations (location_id, name, description) VALUES (?, ?, ?) "
             "ON CONFLICT(location_id) DO UPDATE SET name=excluded.name, description=excluded.description",
             (loc_id, loc["name"], loc.get("description")),
+        )
+    if parsed["locations"]:
+        current_locs = list(parsed["locations"].keys())
+        db.execute(
+            f"DELETE FROM locations WHERE location_id NOT IN ({','.join('?' * len(current_locs))})",
+            current_locs,
         )
     for oid, d in parsed["artists"].items():
         db.execute(

@@ -101,32 +101,33 @@ def main() -> None:
         if not args.render_only:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
-                ctx = browser.new_context(
-                    locale="en-US",
-                    extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-                )
-
-                print(f"Fetching {args.url} ...")
-                parsed = scrape_lineup(ctx, args.url)
-                print(
-                    f"Parsed {len(parsed['artists'])} artists across "
-                    f"{len(parsed['sections'])} sections, {len(parsed['locations'])} locations."
-                )
-                upsert_lineup(db, parsed)
-                apply_overrides(db, OVERRIDES_PATH)
-
-                if args.refresh_followers:
-                    db.execute(
-                        "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, spotify_listeners = NULL"
+                try:
+                    ctx = browser.new_context(
+                        locale="en-US",
+                        extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
                     )
-                    db.commit()
 
-                if not args.no_followers:
-                    fetch_all_sc(ctx, db)
-                    fetch_all_ig(ctx, db)
-                    fetch_all_spotify(ctx, db)
+                    print(f"Fetching {args.url} ...")
+                    parsed = scrape_lineup(ctx, args.url)
+                    print(
+                        f"Parsed {len(parsed['artists'])} artists across "
+                        f"{len(parsed['sections'])} sections, {len(parsed['locations'])} locations."
+                    )
+                    upsert_lineup(db, parsed)
+                    apply_overrides(db, OVERRIDES_PATH)
 
-                browser.close()
+                    if args.refresh_followers:
+                        db.execute(
+                            "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, spotify_listeners = NULL"
+                        )
+                        db.commit()
+
+                    if not args.no_followers:
+                        fetch_all_sc(ctx, db)
+                        fetch_all_ig(ctx, db)
+                        fetch_all_spotify(ctx, db)
+                finally:
+                    browser.close()
         else:
             print("Rendering from database (no scraping) ...")
             apply_overrides(db, OVERRIDES_PATH)
