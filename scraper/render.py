@@ -87,6 +87,17 @@ def render_output_html(
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     )
     parts.append(f"  <title>{esc(title)}</title>")
+    description = "Explore the Stone Techno 2026 lineup — artist profiles, social links, follower counts. Save your picks and share them with friends."
+    parts.append(f'  <meta name="description" content="{esc(description)}">')
+    parts.append(f'  <meta property="og:title" content="{esc(title)}">')
+    parts.append(f'  <meta property="og:description" content="{esc(description)}">')
+    parts.append('  <meta property="og:type" content="website">')
+    parts.append(
+        '  <meta property="og:url" content="https://stonetechno.deftlab.dev/">'
+    )
+    parts.append('  <meta name="twitter:card" content="summary">')
+    parts.append(f'  <meta name="twitter:title" content="{esc(title)}">')
+    parts.append(f'  <meta name="twitter:description" content="{esc(description)}">')
     import base64 as _b64
 
     favicon_b64 = _b64.b64encode((ICONS_DIR / "favicon.svg").read_bytes()).decode()
