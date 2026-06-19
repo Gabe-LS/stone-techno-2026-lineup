@@ -1,4 +1,4 @@
-# Stone Techno 2026 Line-up — Spec
+# Stone Techno Companion — Spec
 
 ## Overview
 
@@ -11,7 +11,7 @@ VPS behind Caddy.
 
 ## 1. Data Pipeline (existing, runs locally)
 
-### 1.1 Scraper (`lineup_extract.py`)
+### 1.1 Scraper (`stone_techno_companion.py`)
 
 Source: `https://www.stone-techno.com/`
 
@@ -338,7 +338,7 @@ Compression and caching headers are set at the reverse proxy level.
 
 ### 3.4 Deploy Flow (`--deploy`)
 
-The `--deploy` flag in `lineup_extract.py`:
+The `--deploy` flag in `stone_techno_companion.py`:
 
 1. Copies `output/lineup.html` → `output/index.html`
 2. Rsyncs `output/index.html` and `output/photos/` to VPS:
@@ -355,7 +355,7 @@ No container restart needed — static files are volume-mounted.
    scp -r docker-compose.yml Dockerfile api.py requirements.txt \
        root@209.38.244.136:/root/services/stone-techno/
    ```
-3. Deploy static files: `python3 lineup_extract.py --render-only --no-photos --deploy`
+3. Deploy static files: `python3 stone_techno_companion.py --render-only --no-photos --deploy`
 4. Start the container:
    ```bash
    ssh root@209.38.244.136 "cd /root/services/stone-techno && docker compose up -d"
@@ -578,7 +578,7 @@ Key implementation details:
 
 | File | Purpose | Tracked in git |
 |---|---|---|
-| `lineup_extract.py` | Main script (scraper + renderer) | Yes |
+| `stone_techno_companion.py` | Main script (scraper + renderer) | Yes |
 | `overrides.toml` | Manual link corrections | Yes |
 | `icons/*.svg` | Platform icons (IG, SC, Spotify, LT, YT) | Yes |
 | `spec.md` | This document | Yes |

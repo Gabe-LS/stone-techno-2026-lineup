@@ -1154,8 +1154,9 @@ def render_output_html(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Scrape the Stone Techno lineup and produce a clean HTML page. "
-        "Data is cached in lineup.db — images and follower counts are only fetched once."
+        prog="stone_techno_companion",
+        description="Stone Techno Companion — scrape the festival lineup, enrich with "
+        "social data, and generate an interactive line-up page.",
     )
     parser.add_argument("--url", default=STONE_TECHNO_URL)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
