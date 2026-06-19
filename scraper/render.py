@@ -87,6 +87,12 @@ def render_output_html(
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     )
     parts.append(f"  <title>{esc(title)}</title>")
+    import base64 as _b64
+
+    favicon_b64 = _b64.b64encode((ICONS_DIR / "favicon.svg").read_bytes()).decode()
+    parts.append(
+        f'  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{favicon_b64}">'
+    )
     parts.append("  <style>")
     parts.append("""
     *, *::before, *::after { box-sizing: border-box; }
