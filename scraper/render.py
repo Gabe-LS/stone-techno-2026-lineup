@@ -174,6 +174,8 @@ def render_output_html(
     .modal-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; }
     .pin { display:flex; gap:5px; justify-content:center; margin:10px 0; }
     .pin span { width:28px; height:36px; font-size:1.2em; font-weight:700; border:1px solid #ddd; border-radius:5px; background:#f5f5f5; color:#111; display:flex; align-items:center; justify-content:center; line-height:1; }
+    .sync-expiry { font-size:.75em; color:#999; text-align:center; margin:8px 0 0; }
+    .sync-expiry a { color:inherit; text-decoration:underline; cursor:pointer; }
     .pin-wrap { position:relative; cursor:text; margin:10px 0; -webkit-tap-highlight-color:transparent; }
     .pin-wrap .pin { pointer-events:none; }
     .pin-wrap .pin span.active { border-color:#111; background:#fff; }
@@ -239,7 +241,7 @@ def render_output_html(
     parts.append('        <div class="qr-wrap">')
     parts.append('          <p class="lbl">Scan this QR with your other device:</p>')
     parts.append(
-        '          <canvas id="sync-qr" width="540" height="540" style="width:180px;height:180px"></canvas>'
+        '          <canvas id="sync-qr" width="360" height="360" style="width:120px;height:120px"></canvas>'
     )
     parts.append('          <div class="or-line"><hr><span>or</span><hr></div>')
     parts.append("        </div>")
@@ -251,6 +253,7 @@ def render_output_html(
     parts.append("          <p>Enter the code shown below</p>")
     parts.append("        </div>")
     parts.append('        <div class="pin" id="pin-display"></div>')
+    parts.append('        <p class="sync-expiry" id="sync-expiry"></p>')
     parts.append("      </div>")
     parts.append('      <div class="pane" id="p-recv">')
     parts.append('        <p class="lbl">On your other device:</p>')
@@ -647,6 +650,7 @@ def render_output_html(
       m.classList.remove('open');
       const box = m.querySelector('.modal-box');
       box.style.transform = '';
+      if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
       pinField.value = '';
       syncPinDisplay();
       const scrollY = document.body.style.top;
@@ -711,6 +715,38 @@ def render_output_html(
     }
 
     // Sync modal
+    let _syncTimer = null;
+    async function generateSyncPin() {
+      const d = document.getElementById('pin-display');
+      const exp = document.getElementById('sync-expiry');
+      const qr = document.getElementById('sync-qr');
+      d.innerHTML = '';
+      exp.textContent = '';
+      if (qr) qr.getContext('2d').clearRect(0, 0, qr.width, qr.height);
+      if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+      try {
+        const res = await fetch(API + '/session/' + sessionId + '/sync-pin', {method: 'POST'});
+        if (!res.ok) return;
+        const data = await res.json();
+        for (const ch of data.pin) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
+        loadQR('sync-qr', location.origin + '/?sync=' + data.pin);
+        const deadline = Date.now() + 300000;
+        function tick() {
+          const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+          if (left === 0) {
+            clearInterval(_syncTimer); _syncTimer = null;
+            d.innerHTML = '';
+            if (qr) qr.getContext('2d').clearRect(0, 0, qr.width, qr.height);
+            exp.innerHTML = 'QR code and PIN expired. <a onclick="generateSyncPin()">Generate new ones</a>';
+            return;
+          }
+          if (left >= 60) { const m = Math.ceil(left / 60); exp.textContent = 'Valid for ' + m + ' min'; }
+          else exp.textContent = 'Valid for ' + left + 's';
+        }
+        tick();
+        _syncTimer = setInterval(tick, 1000);
+      } catch {}
+    }
     async function openSyncModal() {
       await ensureSession();
       if (!sessionId) { alert('Heart an artist first.'); return; }
@@ -718,16 +754,7 @@ def render_output_html(
       document.querySelector('#m-sync .tabs button').classList.add('on');
       document.getElementById('p-send').classList.add('on');
       document.getElementById('p-recv').classList.remove('on');
-      const d = document.getElementById('pin-display');
-      d.innerHTML = '';
-      try {
-        const res = await fetch(API + '/session/' + sessionId + '/sync-pin', {method: 'POST'});
-        if (res.ok) {
-          const data = await res.json();
-          for (const ch of data.pin) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
-          loadQR('sync-qr', location.origin + '/?sync=' + data.pin);
-        }
-      } catch {}
+      await generateSyncPin();
       openDialog('m-sync');
     }
     function syncTab(t, btn) {
