@@ -20,7 +20,7 @@ CODE_RE = re.compile(r"^\d{6}$")
 
 # Rate limiting: {ip: [(timestamp, endpoint_key), ...]}
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
-RATE_LIMITS = {"create": (10, 3600), "pick": (300, 3600), "load": (300, 3600)}
+RATE_LIMITS = {"create": (10, 3600), "pick": (300, 3600), "load": (7200, 3600)}
 
 
 def _check_rate(ip: str, key: str) -> None:

@@ -112,7 +112,7 @@ def render_output_html(
       .cmd-bar { font-size: 0.7em; }
       h1 { font-size: 1.5em; padding: 8px 0 6px; top: 28px; }
       h2 { font-size: 1.2em; padding: 6px 0; top: 78px; }
-      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 120px; margin: 16px 0 8px; }
+      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 118px; margin: 16px 0 8px; }
       h4.location-heading { top: 152px; }
       li.artist-item { gap: 10px; padding: 10px; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
@@ -124,10 +124,14 @@ def render_output_html(
       .links a svg { width: 14px; height: 14px; }
       .heart-btn svg { width: 18px; height: 18px; }
       .share-bar { font-size: 0.8em; padding: 8px 12px; }
+      .modal-content { padding: 20px 16px; max-width: 320px; }
+      .modal-tabs { flex-direction: column; }
+      .sync-qr-section { display: none; }
     }
+    html.scroll-locked, html.scroll-locked body { height: calc(var(--vh, 100vh) - 1px); overflow: hidden; }
     .heart-btn { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
     .heart-btn svg { fill: none; stroke: #ccc; stroke-width: 2; transition: fill 0.15s, stroke 0.15s; width: 22px; height: 22px; }
-    .heart-btn:hover svg { stroke: #e53e3e; }
+    .heart-btn:hover:not(.active) svg { stroke: #ddd; }
     .heart-btn.active svg { fill: #e53e3e; stroke: #e53e3e; }
     .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; height: 28px; font-size: 0.75em; }
     .cmd-bar button { background: none; color: #999; border: none; cursor: pointer; padding: 0; font-size: 1em; white-space: nowrap; flex: 1; text-align: center; transition: color 0.1s; letter-spacing: 0.03em; }
@@ -135,35 +139,42 @@ def render_output_html(
     .cmd-bar button:focus { outline: none; }
     .cmd-bar button.active { color: #e53e3e; }
     .cmd-bar .sep { color: #333; margin: 0; display: flex; align-items: center; }
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
-    .modal-overlay.visible { display: flex; }
-    .modal-content { background: #fff; padding: 28px; border-radius: 16px; text-align: center; max-width: 400px; width: 90%; color: #111; box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
-    .modal-content h3 { margin: 0 0 8px; font-size: 1.05em; font-weight: 600; }
-    .modal-content p { font-size: 0.82em; color: #999; margin: 0 0 16px; line-height: 1.4; }
-    .modal-content code { display: block; background: #f8f8f8; padding: 12px; border-radius: 8px; font-size: 1.3em; font-weight: 700; letter-spacing: 0.15em; border: none; margin: 12px 0; color: #111; }
-    .modal-content code.share-link { font-size: 0.85em; font-weight: 500; letter-spacing: 0; word-break: break-all; padding: 14px 16px; color: #333; margin-bottom: 0; }
-    .modal-content canvas { margin: 12px auto; display: block; border-radius: 8px; }
-    .modal-content button { background: #111; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; margin: 4px 3px 0; font-size: 0.85em; transition: background 0.1s; }
-    .modal-content button:hover { background: #333; }
-    .modal-content button:focus { outline: none; }
     .filter-active .artist-item:not(.hearted) { display: none; }
-    .modal-close { position: absolute; top: 10px; right: 10px; background: #f0f0f0; border: none; font-size: 0.9em; color: #bbb; cursor: pointer; width: 24px; height: 24px; line-height: 24px; text-align: center; padding: 0; margin: 0; border-radius: 4px; }
-    .modal-close:hover { background: #e0e0e0; color: #888; }
-    .modal-content { position: relative; }
-    .copyable { cursor: pointer; transition: background 0.15s; }
-    .copyable:hover { background: #eee; }
-    .copyable.copied { background: #d4edda; }
-    .modal-tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0; }
-    .modal-tabs button { flex: 1; background: #f8f8f8; border: none; padding: 9px; cursor: pointer; font-size: 0.82em; color: #888; transition: all 0.1s; }
-    .modal-tabs button:focus { outline: none; }
-    .modal-tabs button.active { background: #111; color: #fff; }
-    .modal-panel { display: none; }
-    .modal-panel.active { display: block; }
-    .modal-content input[type="text"] { width: 100%; padding: 12px; font-size: 1.2em; border: 1px solid #e0e0e0; border-radius: 8px; text-align: center; letter-spacing: 0.15em; box-sizing: border-box; margin: 8px 0; font-weight: 600; }
-    .modal-content input[type="text"]:focus { outline: none; border-color: #111; }
-    .modal-content .step { text-align: left; font-size: 0.8em; color: #888; margin: 6px 0; padding-left: 18px; }
-    .modal-content .step::before { content: counter(step) ". "; counter-increment: step; font-weight: 600; color: #111; }
-    .modal-content .steps { counter-reset: step; }
+
+    /* --- Modals --- */
+    .mo { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+    .mo.open { display:flex; align-items:flex-start; justify-content:center; padding:16vh 0 2vh; overflow-y:auto; }
+    .mo-box { background:#fff; border-radius:14px; padding:24px; width:320px; max-width:calc(100vw - 48px); text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); position:relative; }
+    .mo-box h3 { margin:0 0 6px; font-size:1em; font-weight:600; }
+    .mo-box .sub { font-size:.8em; color:#999; margin:0 0 14px; }
+    .mo-box .link-field { display:block; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:.82em; font-family:inherit; word-break:break-all; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; }
+    .mo-box .link-field:hover { background:#eee; }
+    .mo-box .link-field.copied { background:#d4edda; }
+    .mo-box canvas { display:block; margin:10px auto; border-radius:6px; }
+    .mo-box .or-line { display:flex; align-items:center; gap:10px; margin:10px 0; }
+    .mo-box .or-line hr { flex:1; border:none; border-top:1px solid #e0e0e0; }
+    .mo-box .or-line span { color:#bbb; font-size:.78em; }
+    .mo-box .tabs { display:flex; gap:3px; margin-bottom:14px; border-radius:8px; border:1px solid #e0e0e0; padding:3px; background:#f5f5f5; }
+    .mo-box .tabs button { flex:1; background:transparent; border:none; padding:7px 4px; cursor:pointer; font-size:.8em; color:#888; border-radius:5px; transition:color .15s,background .15s; }
+    .mo-box .tabs button:focus { outline:none; }
+    .mo-box .tabs button:hover:not(.on) { background:#eee; color:#555; }
+    .mo-box .tabs button.on { background:#111; color:#fff; }
+    .mo-box .pane { display:none; }
+    .mo-box .pane.on { display:block; }
+    .mo-box .lbl { font-size:.82em; color:#333; text-align:left; margin:0 0 4px; }
+    .mo-box .steps { counter-reset:s; }
+    .mo-box .steps p { text-align:left; font-size:.8em; color:#333; margin:5px 0; padding-left:16px; }
+    .mo-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; }
+    .pin { display:flex; gap:5px; justify-content:center; margin:10px 0; }
+    .pin span, .pin input { width:28px; height:36px; text-align:center; font-size:1.2em; font-weight:700; border:1px solid #ddd; border-radius:5px; background:#f5f5f5; color:#111; line-height:36px; display:block; }
+    .pin input { padding:0; caret-color:#111; }
+    .pin input:focus { outline:none; border-color:#111; background:#fff; }
+    .mo-box .btn { background:#111; color:#fff; border:none; padding:7px 18px; border-radius:5px; cursor:pointer; font-size:.82em; margin-top:8px; }
+    .mo-box .btn:hover { background:#333; }
+    .mo-box .btn:focus { outline:none; }
+    .qr-wrap { display:block; }
+    @media (max-width:480px) { .qr-wrap { display:none; } .mo-box .tabs { flex-direction:column; } }
+    @media (max-height:600px) { .mo.open { padding-top:5vh; } }
     """)
     parts.append("  </style>")
     parts.append("</head>")
@@ -179,64 +190,60 @@ def render_output_html(
     parts.append("  </div>")
     parts.append(f"  <h1>{esc(title)}</h1>")
 
-    # Share modal (read-only link for friends)
-    parts.append(
-        '  <div class="modal-overlay" id="share-modal" onclick="closeModal(\'share-modal\')">'
-    )
-    parts.append('    <div class="modal-content" onclick="event.stopPropagation()">')
-    parts.append("")
+    # Share modal
+    parts.append('  <div class="mo" id="m-share" onclick="closeMo(this)">')
+    parts.append('    <div class="mo-box" onclick="event.stopPropagation()">')
     parts.append("      <h3>Share With Friends</h3>")
-    parts.append("      <p>Friends can view your picks. Click the link to copy it.</p>")
     parts.append(
-        '      <code class="share-link copyable" id="share-link" onclick="copyShareLink(this)"></code>'
+        '      <p class="sub">Friends can view your picks. Click the link to copy it.</p>'
+    )
+    parts.append(
+        '      <div class="link-field" id="share-link" onclick="copyLink(this)"></div>'
     )
     parts.append("    </div>")
     parts.append("  </div>")
 
-    # Sync modal (read-write code for own devices)
-    parts.append(
-        '  <div class="modal-overlay" id="sync-modal" onclick="closeModal(\'sync-modal\')">'
+    # Sync modal
+    pin_inputs = "".join(
+        f'<input class="pin-input" type="text" inputmode="numeric" maxlength="1" autocomplete="off" data-i="{i}"/>'
+        for i in range(6)
     )
-    parts.append('    <div class="modal-content" onclick="event.stopPropagation()">')
-    parts.append("")
+    parts.append('  <div class="mo" id="m-sync" onclick="closeMo(this)">')
+    parts.append('    <div class="mo-box" onclick="event.stopPropagation()">')
     parts.append("      <h3>Sync Your Devices</h3>")
-    parts.append('      <div class="modal-tabs">')
+    parts.append('      <div class="tabs">')
     parts.append(
-        '        <button class="active" onclick="switchSyncTab(\'send\', this)">Send to another device</button>'
+        '        <button class="on" onclick="syncTab(\'send\',this)">Send to another device</button>'
     )
     parts.append(
-        "        <button onclick=\"switchSyncTab('receive', this)\">Receive from another device</button>"
+        "        <button onclick=\"syncTab('recv',this)\">Receive from another device</button>"
     )
     parts.append("      </div>")
-    parts.append('      <div class="modal-panel active" id="sync-send">')
+    parts.append('      <div class="pane on" id="p-send">')
+    parts.append('        <div class="qr-wrap">')
+    parts.append('          <p class="lbl">Scan this QR with your other device:</p>')
+    parts.append('          <canvas id="sync-qr" width="180" height="180"></canvas>')
+    parts.append('          <div class="or-line"><hr><span>or</span><hr></div>')
+    parts.append("        </div>")
+    parts.append('        <p class="lbl">On your other device:</p>')
     parts.append('        <div class="steps">')
-    parts.append(
-        '          <p class="step">Open the lineup page on your other device</p>'
-    )
-    parts.append(
-        '          <p class="step">Tap <strong>Sync</strong> then <strong>Receive</strong></p>'
-    )
-    parts.append('          <p class="step">Enter this code or scan the QR:</p>')
+    parts.append("          <p>Open <strong>stonetechno.deftlab.dev</strong></p>")
+    parts.append("          <p>Click <strong>Sync</strong></p>")
+    parts.append("          <p>Click <strong>Receive from another device</strong></p>")
+    parts.append("          <p>Enter the code shown below</p>")
     parts.append("        </div>")
-    parts.append('        <code id="sync-code"></code>')
-    parts.append('        <canvas id="sync-qr"></canvas>')
-    parts.append("        <div>")
-    parts.append("          <button onclick=\"copyLink('sync')\">Copy Link</button>")
-    parts.append("        </div>")
+    parts.append('        <div class="pin" id="pin-display"></div>')
     parts.append("      </div>")
-    parts.append('      <div class="modal-panel" id="sync-receive">')
+    parts.append('      <div class="pane" id="p-recv">')
+    parts.append('        <p class="lbl">On your other device:</p>')
     parts.append('        <div class="steps">')
-    parts.append(
-        '          <p class="step">On your other device, tap <strong>Sync</strong> then <strong>Send</strong></p>'
-    )
-    parts.append('          <p class="step">Enter the code shown on that device:</p>')
+    parts.append("          <p>Click <strong>Sync</strong></p>")
+    parts.append("          <p>Click <strong>Send to another device</strong></p>")
     parts.append("        </div>")
-    parts.append(
-        '        <input type="text" id="sync-input" placeholder="Enter sync code" maxlength="12" autocomplete="off" />'
-    )
-    parts.append("        <div>")
-    parts.append('          <button onclick="applySyncCode()">Connect</button>')
-    parts.append("        </div>")
+    parts.append('        <p class="lbl" style="margin-top:10px">On this device:</p>')
+    parts.append('        <div class="steps"><p>Enter the code</p></div>')
+    parts.append(f'        <div class="pin" id="pin-input">{pin_inputs}</div>')
+    parts.append('        <button class="btn" onclick="submitPin()">Connect</button>')
     parts.append("      </div>")
     parts.append("    </div>")
     parts.append("  </div>")
@@ -372,7 +379,7 @@ def render_output_html(
     // Blur buttons after click, ESC to close modals
     document.addEventListener('click', e => { if (e.target.matches('button')) e.target.blur(); });
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+      if (e.key === 'Escape') { document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible')); document.body.classList.remove('modal-open'); }
     });
 
     function saveLocal() {
@@ -509,75 +516,114 @@ def render_output_html(
       } catch {}
     }
 
-    function closeModal(id) { document.getElementById(id).classList.remove('visible'); }
+    // Modal helpers
+    // Scroll lock (PQINA technique — works on iOS Safari)
+    let _savedY = 0;
+    function _syncVH() { document.documentElement.style.setProperty('--vh', window.innerHeight + 'px'); }
+    window.addEventListener('resize', _syncVH); _syncVH();
 
-    function loadQR(canvasId, url) {
-      const canvas = document.getElementById(canvasId);
-      canvas.width = 200; canvas.height = 200;
+    function openMo(id) {
+      _savedY = window.scrollY;
+      document.documentElement.classList.add('scroll-locked');
+      document.getElementById(id).classList.add('open');
+    }
+    function closeMo(el) {
+      (el.closest ? el.closest('.mo') : el).classList.remove('open');
+      document.documentElement.classList.remove('scroll-locked');
+      window.scrollTo(0, _savedY);
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        const open = document.querySelectorAll('.mo.open');
+        if (open.length) { open.forEach(m => m.classList.remove('open')); document.documentElement.classList.remove('scroll-locked'); window.scrollTo(0, _savedY); }
+      }
+    });
+    document.addEventListener('click', e => { if (e.target.matches('button')) e.target.blur(); });
+
+    function loadQR(id, url) {
+      const c = document.getElementById(id);
+      if (!c) return;
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => { canvas.getContext('2d').drawImage(img, 0, 0, 200, 200); };
+      img.onload = () => { c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); };
       img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
     }
 
+    // Share modal
     function openShareModal() {
-      if (!shareCode) { alert('Heart an artist first to create your picks list.'); return; }
-      const url = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
-      document.getElementById('share-link').textContent = url;
-      document.getElementById('share-modal').classList.add('visible');
+      if (!shareCode) { alert('Heart an artist first.'); return; }
+      document.getElementById('share-link').textContent = 'https://stonetechno.deftlab.dev/?code=' + shareCode;
+      openMo('m-share');
     }
-
-    function copyShareLink(el) {
+    function copyLink(el) {
       navigator.clipboard.writeText(el.textContent);
       el.classList.add('copied');
-      const orig = el.textContent;
-      el.textContent = 'Copied!';
-      setTimeout(() => { el.textContent = orig; el.classList.remove('copied'); }, 1500);
+      const t = el.textContent; el.textContent = 'Copied!';
+      setTimeout(() => { el.textContent = t; el.classList.remove('copied'); }, 1500);
     }
 
+    // Sync modal
     async function openSyncModal() {
       await ensureSession();
-      if (!editCode) { alert('Heart an artist first to create your picks list.'); return; }
-      const url = 'https://stonetechno.deftlab.dev/?code=' + editCode;
-      document.getElementById('sync-code').textContent = editCode;
-      loadQR('sync-qr', url);
-      document.getElementById('sync-modal').classList.add('visible');
+      if (!editCode) { alert('Heart an artist first.'); return; }
+      const d = document.getElementById('pin-display');
+      d.innerHTML = '';
+      for (const ch of editCode) { const s = document.createElement('span'); s.textContent = ch; d.appendChild(s); }
+      loadQR('sync-qr', 'https://stonetechno.deftlab.dev/?code=' + editCode);
+      openMo('m-sync');
+    }
+    function syncTab(t, btn) {
+      btn.closest('.tabs').querySelectorAll('button').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      document.getElementById('p-send').classList.toggle('on', t === 'send');
+      document.getElementById('p-recv').classList.toggle('on', t === 'recv');
+      if (t === 'recv') { const f = document.querySelector('#pin-input input'); if (f) f.focus(); }
     }
 
-    function switchSyncTab(tab, btn) {
-      document.querySelectorAll('#sync-modal .modal-tabs button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('sync-send').classList.toggle('active', tab === 'send');
-      document.getElementById('sync-receive').classList.toggle('active', tab === 'receive');
-      if (tab === 'receive') document.getElementById('sync-input').focus();
-    }
-
-    function applySyncCode() {
-      const input = document.getElementById('sync-input');
-      const code = input.value.trim();
-      if (!code) return;
+    // Pin inputs
+    document.querySelectorAll('#pin-input input').forEach(inp => {
+      inp.addEventListener('input', e => {
+        const v = e.target.value.replace(/\\D/g, '');
+        e.target.value = v.slice(0, 1);
+        const i = +e.target.dataset.i;
+        if (v && i < 5) { const nx = e.target.parentElement.querySelector('[data-i="'+(i+1)+'"]'); if (nx) nx.focus(); }
+        if (v && i === 5) submitPin();
+      });
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Backspace' && !e.target.value) {
+          const i = +e.target.dataset.i;
+          if (i > 0) { const pv = e.target.parentElement.querySelector('[data-i="'+(i-1)+'"]'); if (pv) { pv.value=''; pv.focus(); } }
+        }
+      });
+      inp.addEventListener('paste', e => {
+        e.preventDefault();
+        const t = (e.clipboardData.getData('text')||'').replace(/\\D/g,'').slice(0,6);
+        const all = document.querySelectorAll('#pin-input input');
+        for (let j=0; j<t.length&&j<6; j++) all[j].value=t[j];
+        if (t.length===6) submitPin(); else if (t.length) all[Math.min(t.length,5)].focus();
+      });
+    });
+    function submitPin() {
+      const code = Array.from(document.querySelectorAll('#pin-input input')).map(i=>i.value).join('');
+      if (code.length!==6) return;
       loadFromServer(code);
-      closeModal('sync-modal');
-      input.value = '';
+      closeMo(document.getElementById('m-sync'));
+      document.querySelectorAll('#pin-input input').forEach(i=>i.value='');
     }
 
-    function copyLink(type) {
-      const code = type === 'share' ? shareCode : editCode;
-      const url = 'https://stonetechno.deftlab.dev/?code=' + code;
-      navigator.clipboard.writeText(url);
-      event.target.textContent = 'Copied!';
-      setTimeout(() => event.target.textContent = 'Copy Link', 1500);
-    }
-
+    // Init
     (async () => {
-      const params = new URLSearchParams(location.search);
-      const urlCode = params.get('code');
-      if (urlCode) { await loadFromServer(urlCode); }
-      else if (editCode) { await reconcile(); }
+      const p = new URLSearchParams(location.search);
+      const c = p.get('code');
+      if (c) await loadFromServer(c);
+      else if (editCode) await reconcile();
       applyHearts();
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && editCode && !readOnly) reconcile();
       });
+      setInterval(() => {
+        if (document.visibilityState === 'visible' && editCode && !readOnly) reconcile();
+      }, 500);
     })();
     """)
     parts.append("  </script>")
