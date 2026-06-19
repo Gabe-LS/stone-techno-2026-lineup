@@ -238,22 +238,36 @@ def render_output_html(
     )
     parts.append("      </div>")
     parts.append('      <div class="pane on" id="p-send">')
-    parts.append('        <div class="qr-wrap">')
-    parts.append('          <p class="lbl">Scan this QR with your other device:</p>')
+    parts.append('        <div id="sync-pending">')
+    parts.append('          <div class="qr-wrap">')
+    parts.append('            <p class="lbl">Scan this QR with your other device:</p>')
     parts.append(
-        '          <canvas id="sync-qr" width="360" height="360" style="width:120px;height:120px"></canvas>'
+        '            <canvas id="sync-qr" width="360" height="360" style="width:120px;height:120px"></canvas>'
     )
-    parts.append('          <div class="or-line"><hr><span>or</span><hr></div>')
+    parts.append('            <div class="or-line"><hr><span>or</span><hr></div>')
+    parts.append("          </div>")
+    parts.append('          <p class="lbl">On your other device:</p>')
+    parts.append('          <div class="steps">')
+    parts.append("            <p>Open <strong>stonetechno.deftlab.dev</strong></p>")
+    parts.append("            <p>Click <strong>Sync My Picks</strong></p>")
+    parts.append(
+        "            <p>Click <strong>Receive from another device</strong></p>"
+    )
+    parts.append("            <p>Enter the code shown below</p>")
+    parts.append("          </div>")
+    parts.append('          <div class="pin" id="pin-display"></div>')
+    parts.append('          <p class="sync-expiry" id="sync-expiry"></p>')
     parts.append("        </div>")
-    parts.append('        <p class="lbl">On your other device:</p>')
-    parts.append('        <div class="steps">')
-    parts.append("          <p>Open <strong>stonetechno.deftlab.dev</strong></p>")
-    parts.append("          <p>Click <strong>Sync</strong></p>")
-    parts.append("          <p>Click <strong>Receive from another device</strong></p>")
-    parts.append("          <p>Enter the code shown below</p>")
+    parts.append(
+        '        <div id="sync-done" style="display:none;text-align:center;padding:24px 0">'
+    )
+    parts.append(
+        '          <svg viewBox="0 0 52 52" width="52" height="52"><circle cx="26" cy="26" r="24" fill="none" stroke="#4caf50" stroke-width="3"/><path fill="none" stroke="#4caf50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M15 27l7 7 15-15"/></svg>'
+    )
+    parts.append(
+        '          <p style="margin:12px 0 0;color:#333">Device synced successfully</p>'
+    )
     parts.append("        </div>")
-    parts.append('        <div class="pin" id="pin-display"></div>')
-    parts.append('        <p class="sync-expiry" id="sync-expiry"></p>')
     parts.append("      </div>")
     parts.append('      <div class="pane" id="p-recv">')
     parts.append('        <p class="lbl">On your other device:</p>')
@@ -602,12 +616,8 @@ def render_output_html(
           const data = JSON.parse(e.data);
           if (data.sync_complete) {
             if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
-            const exp = document.getElementById('sync-expiry');
-            const d = document.getElementById('pin-display');
-            const qr = document.getElementById('sync-qr');
-            if (d) d.innerHTML = '';
-            if (qr) qr.getContext('2d').clearRect(0, 0, qr.width, qr.height);
-            if (exp) exp.textContent = 'Device synced successfully.';
+            document.getElementById('sync-pending').style.display = 'none';
+            document.getElementById('sync-done').style.display = '';
           }
           if (data.picks) {
             localPicks = new Set(data.picks);
@@ -759,6 +769,8 @@ def render_output_html(
     async function openSyncModal() {
       await ensureSession();
       if (!sessionId) { alert('Heart an artist first.'); return; }
+      document.getElementById('sync-pending').style.display = '';
+      document.getElementById('sync-done').style.display = 'none';
       document.querySelectorAll('#m-sync .tabs button').forEach(b => b.classList.remove('on'));
       document.querySelector('#m-sync .tabs button').classList.add('on');
       document.getElementById('p-send').classList.add('on');
