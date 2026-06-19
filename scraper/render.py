@@ -87,8 +87,6 @@ def render_output_html(
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     )
     parts.append(f"  <title>{esc(title)}</title>")
-    qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
-    parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <style>")
     parts.append("""
     *, *::before, *::after { box-sizing: border-box; }
@@ -399,6 +397,8 @@ def render_output_html(
 
         parts.append("  </section>")
 
+    qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
+    parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <script>")
     parts.append("""
     // Sticky gradient observer
