@@ -4,6 +4,7 @@
 # count is automatically cleared and re-fetched on the next run.
 #
 # Supported fields: instagram, soundcloud, spotify, linktree, youtube, photo
+# Set a field to false to mark it as non-existent (stops re-fetching).
 #
 # Template — copy and fill in:
 #
@@ -36,3 +37,7 @@ soundcloud = "https://soundcloud.com/sergeclone"
 [ROD]
 soundcloud = "https://soundcloud.com/bennyrodrigues"
 photo = "https://cdn.amsterdam-dance-event.nl/images/images/transforms/artists-speakers/_1802xAUTO_crop_center-center_none/19883/Benny1_57553-1739374845.webp"
+
+[Function]
+spotify = "https://open.spotify.com/artist/6eu3TBnYM3SrkUU59SFhgp"
+soundcloud = false

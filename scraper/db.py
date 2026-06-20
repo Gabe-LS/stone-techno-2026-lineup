@@ -128,7 +128,9 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
                 ),
             )
     elif parsed["artists"]:
-        print("WARNING: Scrape returned artists but no assignments - keeping existing lineup data")
+        print(
+            "WARNING: Scrape returned artists but no assignments - keeping existing lineup data"
+        )
     db.commit()
 
 
@@ -155,20 +157,24 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
             if field not in OVERRIDE_FIELDS:
                 print(f"  Override skipped: unknown field '{field}' for {artist_name}")
                 continue
+            # false means "no profile" — clear the URL and mark count as fetched
+            if value is False:
+                value = ""
+            dependent_col = {
+                "instagram": "ig_followers",
+                "soundcloud": "sc_followers",
+                "spotify": "spotify_listeners",
+                "photo": "photo_local",
+            }.get(field)
             current = db.execute(
                 f"SELECT {field} FROM artists WHERE overlay_id = ?", (oid,)
             ).fetchone()[0]
             if current != value:
-                dependent_col = {
-                    "instagram": "ig_followers",
-                    "soundcloud": "sc_followers",
-                    "spotify": "spotify_listeners",
-                    "photo": "photo_local",
-                }.get(field)
                 if dependent_col:
+                    count_val = 0 if value == "" else None
                     db.execute(
-                        f"UPDATE artists SET {field} = ?, {dependent_col} = NULL WHERE overlay_id = ?",
-                        (value, oid),
+                        f"UPDATE artists SET {field} = ?, {dependent_col} = ? WHERE overlay_id = ?",
+                        (value, count_val, oid),
                     )
                 else:
                     db.execute(
@@ -185,7 +191,7 @@ def get_missing(
     db: sqlite3.Connection, url_col: str, count_col: str
 ) -> list[tuple[str, str]]:
     return db.execute(
-        f"SELECT overlay_id, {url_col} FROM artists WHERE {url_col} IS NOT NULL AND {count_col} IS NULL"
+        f"SELECT overlay_id, {url_col} FROM artists WHERE {url_col} IS NOT NULL AND {url_col} != '' AND {count_col} IS NULL"
     ).fetchall()
 
 
@@ -272,8 +278,15 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
 
 
 _VALID_FIELDS = {
-    "ig_followers", "sc_followers", "spotify_listeners",
-    "instagram", "soundcloud", "spotify", "linktree", "youtube", "photo_local",
+    "ig_followers",
+    "sc_followers",
+    "spotify_listeners",
+    "instagram",
+    "soundcloud",
+    "spotify",
+    "linktree",
+    "youtube",
+    "photo_local",
 }
 
 
