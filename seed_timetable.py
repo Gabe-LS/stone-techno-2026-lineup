@@ -9,13 +9,20 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "lineup.db"
 
-FLOORS = [
-    ("werksschwimmbad", "Werksschwimmbad", None),
-    ("salzlager", "Salzlager", None),
-    ("koksofenbatterie", "Koksofenbatterie", None),
+DAY_FLOORS = [
     ("eisbahn", "Eisbahn", None),
+    ("koksofenbatterie", "Koksofenbatterie", None),
     ("listening-floor", "Listening Floor", None),
+    ("salzlager", "Salzlager", None),
+    ("werksschwimmbad", "Werksschwimmbad", None),
 ]
+
+NIGHT_FLOORS = [
+    ("grand-hall", "Grand Hall", "Hosted by FOLD London"),
+    ("mischanlage", "Mischanlage", "Hosted by Delirium & Gitter"),
+]
+
+ALL_FLOORS = DAY_FLOORS + NIGHT_FLOORS
 
 DAY_START_HOUR = 12
 DAY_END_HOUR = 24
@@ -26,7 +33,7 @@ SET_LENGTHS = [60, 75, 90, 105, 120]
 
 
 def seed(db: sqlite3.Connection) -> None:
-    for loc_id, name, desc in FLOORS:
+    for loc_id, name, desc in ALL_FLOORS:
         db.execute(
             "INSERT INTO locations (location_id, name, description) VALUES (?, ?, ?) "
             "ON CONFLICT(location_id) DO UPDATE SET name=excluded.name, description=excluded.description",
@@ -50,11 +57,11 @@ def seed(db: sqlite3.Connection) -> None:
 
         is_night = period == "night"
         if is_night:
-            floor_ids = [f[0] for f in FLOORS[:3]]
+            floor_ids = [f[0] for f in NIGHT_FLOORS]
             start_hour = NIGHT_START_HOUR
             end_hour = NIGHT_END_HOUR
         else:
-            floor_ids = [f[0] for f in FLOORS]
+            floor_ids = [f[0] for f in DAY_FLOORS]
             start_hour = DAY_START_HOUR
             end_hour = DAY_END_HOUR
 
