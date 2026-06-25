@@ -211,7 +211,8 @@ def render_output_html(
     .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: #eee; border-radius: 6px; }
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: var(--font-lg); display: block; margin-bottom: 3px; }
-    .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 2px; }
+    .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 6px; }
+    .artist-schedule + .artist-also { margin-top: -4px; }
     .artist-also { color: var(--color-muted); font-size: var(--font-xs); display: block; margin-bottom: 6px; }
     .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
     .links a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #555; font-size: var(--font-xs); padding: 3px 0; min-width: 72px; font-variant-numeric: tabular-nums; }
