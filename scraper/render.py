@@ -725,9 +725,7 @@ def render_output_html(
             else:
                 parts.append('    <ul class="artist-list">')
                 for a in artists:
-                    render_artist_card(
-                        a, sec["date"], sec["period"], a.get("location_id")
-                    )
+                    render_artist_card(a, sec["date"], sec["period"])
                 parts.append("    </ul>")
 
         parts.append("  </section>")
@@ -974,9 +972,8 @@ def render_output_html(
                     for a in group:
                         photo_local = a.get("photo_local") or ""
                         name = a.get("name", "")
-                        a_card_key = (
-                            f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{fid}"
-                        )
+                        loc_for_id = fid if is_night else ""
+                        a_card_key = f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{loc_for_id}"
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
                         if photo_local:
                             photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="" loading="lazy">'
@@ -1099,9 +1096,8 @@ def render_output_html(
                     for a in group:
                         photo_local = a.get("photo_local") or ""
                         name = a.get("name", "")
-                        a_card_key = (
-                            f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{fid}"
-                        )
+                        loc_for_id = fid if is_night else ""
+                        a_card_key = f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{loc_for_id}"
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
                         if photo_local:
                             photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="" loading="lazy">'
