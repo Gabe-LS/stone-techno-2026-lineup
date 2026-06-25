@@ -147,8 +147,18 @@ def main() -> None:
         ordered_sections = load_sections_from_db(db)
         all_locations = load_locations_from_db(db)
         all_assignments = load_assignments_from_db(db)
+
+        # Enable timetable view when any artist has start_time
+        has_timetable = any(
+            a.get("start_time") for artists in all_assignments.values() for a in artists
+        )
+
         output_html = render_output_html(
-            args.title, ordered_sections, all_assignments, all_locations
+            args.title,
+            ordered_sections,
+            all_assignments,
+            all_locations,
+            has_timetable=has_timetable,
         )
     finally:
         db.close()

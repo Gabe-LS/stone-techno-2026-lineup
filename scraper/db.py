@@ -56,6 +56,10 @@ def init_db(db: sqlite3.Connection) -> None:
     as_cols = {row[1] for row in db.execute("PRAGMA table_info(artist_sections)")}
     if "location_id" not in as_cols:
         db.execute("ALTER TABLE artist_sections ADD COLUMN location_id TEXT")
+    if "start_time" not in as_cols:
+        db.execute("ALTER TABLE artist_sections ADD COLUMN start_time TEXT")
+    if "end_time" not in as_cols:
+        db.execute("ALTER TABLE artist_sections ADD COLUMN end_time TEXT")
     sec_cols = {row[1] for row in db.execute("PRAGMA table_info(sections)")}
     if "label" in sec_cols and "date" not in sec_cols:
         db.execute("DROP TABLE sections")
@@ -251,7 +255,7 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
     for row in db.execute(
         "SELECT a.name, a.instagram, a.soundcloud, a.spotify, a.linktree, a.youtube, "
         "a.photo_local, a.ig_followers, a.sc_followers, a.spotify_listeners, "
-        "s.timestamp_key, sa.location_id, a.overlay_id "
+        "s.timestamp_key, sa.location_id, a.overlay_id, sa.start_time, sa.end_time "
         "FROM artist_sections sa "
         "JOIN artists a ON a.overlay_id = sa.overlay_id "
         "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
@@ -272,6 +276,8 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
                 "location_id": row[11],
                 "overlay_id": row[12],
                 "all_slots": all_slots.get(row[12], []),
+                "start_time": row[13],
+                "end_time": row[14],
             }
         )
     return assignments

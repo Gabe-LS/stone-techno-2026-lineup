@@ -32,7 +32,12 @@ PIN_RE = re.compile(r"^\d{6}$")
 
 _rate_limits: dict[str, list[tuple[float, str]]] = defaultdict(list)
 _rate_lock = threading.Lock()
-RATE_LIMITS = {"create": (10, 3600), "pick": (600, 3600), "load": (600, 3600)}
+RATE_LIMITS = {
+    "create": (10, 3600),
+    "pick": (600, 3600),
+    "schedule": (600, 3600),
+    "load": (600, 3600),
+}
 
 _sync_pins: dict[str, tuple[str, float]] = {}
 _sync_lock = threading.Lock()
@@ -106,6 +111,14 @@ def _init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_share_token ON sessions(share_token);
     """)
+    # Migrate: add schedule column if missing
+    try:
+        db.execute(
+            "ALTER TABLE sessions ADD COLUMN schedule TEXT NOT NULL DEFAULT '[]'"
+        )
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
     pruned = db.execute(
         "DELETE FROM sessions WHERE updated_at < datetime('now', '-90 days')"
     ).rowcount
@@ -115,26 +128,32 @@ def _init_db() -> None:
     db.close()
 
 
-def _find_session(db: sqlite3.Connection, code: str) -> tuple[str, str, str, bool]:
+def _find_session(db: sqlite3.Connection, code: str) -> tuple[str, str, str, str, bool]:
     row = db.execute(
-        "SELECT session_id, share_token, picks FROM sessions WHERE session_id = ?",
+        "SELECT session_id, share_token, picks, schedule FROM sessions WHERE session_id = ?",
         (code,),
     ).fetchone()
     if row:
-        return row[0], row[1], row[2], False
+        return row[0], row[1], row[2], row[3], False
     row = db.execute(
-        "SELECT session_id, share_token, picks FROM sessions WHERE share_token = ?",
+        "SELECT session_id, share_token, picks, schedule FROM sessions WHERE share_token = ?",
         (code,),
     ).fetchone()
     if row:
-        return row[0], row[1], row[2], True
+        return row[0], row[1], row[2], row[3], True
     raise HTTPException(404, "Session not found")
 
 
 async def _broadcast(
-    session_id: str, picks: list, exclude: WebSocket | None = None
+    session_id: str,
+    picks: list,
+    schedule: list | None = None,
+    exclude: WebSocket | None = None,
 ) -> None:
-    msg = json.dumps({"picks": picks})
+    payload: dict = {"picks": picks}
+    if schedule is not None:
+        payload["schedule"] = schedule
+    msg = json.dumps(payload)
     clients = [
         ws for ws in list(_ws_clients.get(session_id, set())) if ws is not exclude
     ]
@@ -255,7 +274,7 @@ def create_sync_pin(code: str, request: Request):
     _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
-        session_id, _, _, readonly = _find_session(db, code)
+        session_id, _, _, _, readonly = _find_session(db, code)
         if readonly:
             raise HTTPException(403, "Read-only session")
     finally:
@@ -291,11 +310,12 @@ def exchange_sync_pin(
         raise HTTPException(404, "PIN not found or expired")
     db = _get_db()
     try:
-        _, share_token, picks_json, _ = _find_session(db, session_id)
+        _, share_token, picks_json, schedule_json, _ = _find_session(db, session_id)
         _set_session_cookie(response, session_id)
         background_tasks.add_task(_broadcast_sync_complete, session_id)
         return {
             "picks": json.loads(picks_json),
+            "schedule": json.loads(schedule_json),
             "readonly": False,
             "session_id": session_id,
             "share_token": share_token,
@@ -312,10 +332,11 @@ def get_me(request: Request, response: Response):
     _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
-        _, share_token, picks_json, _ = _find_session(db, session_id)
+        _, share_token, picks_json, schedule_json, _ = _find_session(db, session_id)
         _set_session_cookie(response, session_id)
         return {
             "picks": json.loads(picks_json),
+            "schedule": json.loads(schedule_json),
             "readonly": False,
             "session_id": session_id,
             "share_token": share_token,
@@ -331,11 +352,14 @@ def load_session(code: str, request: Request, response: Response):
     _check_rate(_get_client_ip(request), "load")
     db = _get_db()
     try:
-        session_id, share_token, picks_json, readonly = _find_session(db, code)
+        session_id, share_token, picks_json, schedule_json, readonly = _find_session(
+            db, code
+        )
         if not readonly:
             _set_session_cookie(response, session_id)
         return {
             "picks": json.loads(picks_json),
+            "schedule": json.loads(schedule_json),
             "readonly": readonly,
             "session_id": session_id if not readonly else None,
             "share_token": share_token,
@@ -355,7 +379,7 @@ def add_pick(
     _check_rate(_get_client_ip(request), "pick")
     db = _get_db()
     try:
-        session_id, _, _, readonly = _find_session(db, code)
+        session_id, _, _, _, readonly = _find_session(db, code)
         if readonly:
             raise HTTPException(403, "Read-only session")
         db.execute(
@@ -391,7 +415,7 @@ def remove_pick(
     _check_rate(_get_client_ip(request), "pick")
     db = _get_db()
     try:
-        session_id, _, _, readonly = _find_session(db, code)
+        session_id, _, _, _, readonly = _find_session(db, code)
         if readonly:
             raise HTTPException(403, "Read-only session")
         db.execute(
@@ -415,6 +439,77 @@ def remove_pick(
     return Response(status_code=204)
 
 
+@app.post("/api/session/{code}/schedule/{slot_id}", status_code=204)
+def add_schedule(
+    code: str, slot_id: str, request: Request, background_tasks: BackgroundTasks
+):
+    if not TOKEN_RE.match(code):
+        raise HTTPException(422, "Invalid code format")
+    if not UUID_RE.match(slot_id):
+        raise HTTPException(422, "Invalid slot ID format")
+    _check_rate(_get_client_ip(request), "schedule")
+    db = _get_db()
+    try:
+        session_id, _, _, _, readonly = _find_session(db, code)
+        if readonly:
+            raise HTTPException(403, "Read-only session")
+        db.execute(
+            """UPDATE sessions SET schedule = (
+                SELECT json_group_array(value) FROM (
+                    SELECT value FROM json_each(schedule)
+                    UNION SELECT ?
+                )
+            ), updated_at = datetime('now')
+            WHERE session_id = ?""",
+            (slot_id, session_id),
+        )
+        db.commit()
+        row = db.execute(
+            "SELECT picks, schedule FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        picks = json.loads(row[0])
+        schedule = json.loads(row[1])
+    finally:
+        db.close()
+    background_tasks.add_task(_broadcast, session_id, picks, schedule)
+    return Response(status_code=204)
+
+
+@app.delete("/api/session/{code}/schedule/{slot_id}", status_code=204)
+def remove_schedule(
+    code: str, slot_id: str, request: Request, background_tasks: BackgroundTasks
+):
+    if not TOKEN_RE.match(code):
+        raise HTTPException(422, "Invalid code format")
+    if not UUID_RE.match(slot_id):
+        raise HTTPException(422, "Invalid slot ID format")
+    _check_rate(_get_client_ip(request), "schedule")
+    db = _get_db()
+    try:
+        session_id, _, _, _, readonly = _find_session(db, code)
+        if readonly:
+            raise HTTPException(403, "Read-only session")
+        db.execute(
+            """UPDATE sessions SET schedule = COALESCE(
+                (SELECT json_group_array(value) FROM json_each(schedule)
+                 WHERE value != ?),
+                '[]'
+            ), updated_at = datetime('now')
+            WHERE session_id = ?""",
+            (slot_id, session_id),
+        )
+        db.commit()
+        row = db.execute(
+            "SELECT picks, schedule FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        picks = json.loads(row[0])
+        schedule = json.loads(row[1])
+    finally:
+        db.close()
+    background_tasks.add_task(_broadcast, session_id, picks, schedule)
+    return Response(status_code=204)
+
+
 MAX_WS_PER_SESSION = 20
 
 
@@ -426,7 +521,7 @@ async def ws_sync(ws: WebSocket, code: str):
         return
     db = _get_db()
     try:
-        session_id, _, picks_json, readonly = _find_session(db, code)
+        session_id, _, picks_json, schedule_json, readonly = _find_session(db, code)
     except HTTPException:
         await ws.close(code=1008)
         return
@@ -440,7 +535,13 @@ async def ws_sync(ws: WebSocket, code: str):
     clients.add(ws)
     try:
         await ws.send_text(
-            json.dumps({"picks": json.loads(picks_json), "readonly": readonly})
+            json.dumps(
+                {
+                    "picks": json.loads(picks_json),
+                    "schedule": json.loads(schedule_json),
+                    "readonly": readonly,
+                }
+            )
         )
         while True:
             await asyncio.wait_for(ws.receive_text(), timeout=3600)

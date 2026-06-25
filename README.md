@@ -21,7 +21,9 @@ stone-techno-companion/
 │   ├── scrape.py                # Lineup page parser + SC/IG/Spotify scrapers
 │   ├── db.py                    # SQLite schema, upserts, queries, overrides
 │   ├── images.py                # Photo download, resize (pyvips), AVIF encoding
-│   ├── render.py                # HTML generation with inline hearts JS + modals
+│   ├── render.py                # HTML generation — line-up list + timetable grid
+│   ├── render_timetable.py      # (Legacy) standalone timetable renderer
+│   ├── syncscroll.js            # Vendored syncscroll library (reference)
 │   ├── overrides.toml           # Manual corrections for wrong/missing links
 │   ├── qrcode.min.js            # QR code generator (bundled into HTML)
 │   └── icons/                   # SVG icons for Instagram, SoundCloud, Spotify,
@@ -33,7 +35,7 @@ stone-techno-companion/
 │       ├── favicon.svg              # Favicon (calendar + music note)
 │       └── favicon.png              # PNG version for OG image previews
 ├── server/
-│   ├── api.py                   # FastAPI app — favorites API + WebSocket sync
+│   ├── api.py                   # FastAPI app — favorites + schedule API + WebSocket sync
 │   ├── Dockerfile               # Python 3.12 slim + uvicorn
 │   ├── docker-compose.yml       # Container config with volume mounts
 │   └── requirements.txt         # fastapi, uvicorn[standard]
@@ -42,6 +44,7 @@ stone-techno-companion/
 ├── output/                      # Generated (gitignored)
 │   ├── lineup.html              # The final page (~2800 lines)
 │   └── photos/*.avif            # Processed artist photos (~100 files)
+├── seed_timetable.py            # Seeds fake timetable data for development
 └── lineup.db                    # SQLite cache (gitignored)
 ```
 
@@ -164,6 +167,8 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 | `GET` | `/api/session/{code}` | Load picks (works with session_id or share_token) |
 | `POST` | `/api/session/{code}/pick/{artist_id}` | Add a pick |
 | `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove a pick |
+| `POST` | `/api/session/{code}/schedule/{slot_id}` | Add a slot to schedule |
+| `DELETE` | `/api/session/{code}/schedule/{slot_id}` | Remove a slot from schedule |
 | `POST` | `/api/session/{code}/sync-pin` | Generate a 6-digit sync PIN (5-min TTL, single-use) |
 | `POST` | `/api/sync/{pin}` | Exchange a sync PIN for session credentials |
 | `WS` | `/ws/{code}` | WebSocket for real-time sync |
@@ -285,7 +290,11 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
 - Sticky section headers (date, period, location) with gradient fade effect using IntersectionObserver
 - Artist cards with photo, name, schedule annotation, social links + follower counts
 - Lazy-loaded AVIF photos
-- Command bar: Show My Picks (filter toggle) | Share My Picks | Sync My Picks
+- **Timetable view** with CSS grid (desktop) and HTML table (mobile)
+- Per-artist hearts on photo thumbnails, calendar icon for personal schedule
+- B2B sets render as multi-artist cards
+- Mobile: hamburger menu, custom touch scroll with momentum and axis locking
+- Command bar: Line-up | Timetable | Show My Picks | Show My Schedule | Share | Sync
 - Share modal with readonly URL input and copy-to-clipboard
 - Sync modal with QR code, 6-digit PIN, live countdown timer, and success confirmation via WebSocket
 - Read-only share views auto-filter to show only picked artists

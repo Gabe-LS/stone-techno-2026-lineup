@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json as _json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,44 @@ def _format_short_date(date_str: str) -> str:
     return f"{dt.strftime('%A')}, {dt.strftime('%B')} {dt.day}"
 
 
+def _format_date_tab(date_str: str) -> str:
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return f"{dt.strftime('%a')} {dt.day}"
+
+
+def _parse_time(t: str) -> int:
+    """Return minutes since midnight from an ISO time string."""
+    dt = datetime.fromisoformat(t)
+    return dt.hour * 60 + dt.minute
+
+
+def _format_hhmm(minutes: int) -> str:
+    h, m = divmod(minutes % 1440, 60)
+    return f"{h:02d}:{m:02d}"
+
+
+def _artists_json(group: list[dict], photos_prefix: str) -> str:
+    return _json.dumps(
+        [
+            {
+                "name": a.get("name", ""),
+                "photo": photos_prefix + a["photo_local"]
+                if a.get("photo_local")
+                else "",
+                "ig": a.get("instagram") or "",
+                "sc": a.get("soundcloud") or "",
+                "sp": a.get("spotify") or "",
+                "lt": a.get("linktree") or "",
+                "yt": a.get("youtube") or "",
+                "igF": format_followers(a.get("ig_followers")) or "",
+                "scF": format_followers(a.get("sc_followers")) or "",
+                "spL": format_followers(a.get("spotify_listeners")) or "",
+            }
+            for a in group
+        ]
+    )
+
+
 def _format_other_slots(
     all_slots: list[dict], current_date: str, current_period: str
 ) -> str | None:
@@ -74,6 +113,8 @@ def render_output_html(
     ordered_sections: list[dict],
     assignments: dict[str, list[dict]],
     locations: dict[str, dict],
+    has_timetable: bool = False,
+    photos_prefix: str = "photos/",
 ) -> str:
     def esc(text: str | None) -> str:
         return html.escape(text or "")
@@ -131,7 +172,7 @@ def render_output_html(
     .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: #eee; border-radius: 6px; }
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: 1.15em; display: block; margin-bottom: 3px; }
-    .artist-schedule { color: #888; font-size: 0.85em; display: block; margin-bottom: 6px; }
+    .artist-schedule { color: #999; font-size: 0.85em; display: block; margin-bottom: 6px; }
     .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
     .links a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #555; font-size: 0.72em; padding: 3px 0; min-width: 72px; font-variant-numeric: tabular-nums; }
     .links a:hover { color: #111; }
@@ -140,10 +181,10 @@ def render_output_html(
     @media (max-width: 480px) {
       body { padding: 0 12px; }
       .cmd-bar { font-size: 0.7em; }
-      h1 { font-size: 1.5em; padding: 8px 0 6px; top: 28px; }
-      h2 { font-size: 1.2em; padding: 6px 0; top: 78px; }
-      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 118px; margin: 16px 0 8px; }
-      h4.location-heading { top: 152px; }
+      h1 { font-size: 1.5em; padding: 8px 0 6px; top: 48px; }
+      h2 { font-size: 1.2em; padding: 6px 0; top: 100px; }
+      h3.period-heading { font-size: 1em; padding: 6px 0 4px; top: 141px; margin: 16px 0 8px; }
+      h4.location-heading { top: 176px; }
       li.artist-item { gap: 10px; padding: 10px; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
       .photo-placeholder { width: 72px; height: 72px; border-radius: 4px; }
@@ -159,14 +200,16 @@ def render_output_html(
     .heart-btn:hover:not(.active) svg { stroke: #999; }
     .heart-btn:focus:not(:focus-visible) { outline: none; }
     .heart-btn.active svg { fill: #e53e3e; stroke: #e53e3e; }
-    .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; height: 28px; font-size: 0.75em; }
-    .cmd-bar button { background: none; color: #999; border: none; cursor: pointer; padding: 0; font-size: 1em; white-space: nowrap; flex: 1; text-align: center; transition: color 0.1s; letter-spacing: 0.03em; }
+    .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: 0.75em; padding: 0 16px; }
+    .cmd-group { display: flex; align-items: stretch; }
+    .cmd-bar button { background: none; color: #aaa; border: none; cursor: pointer; padding: 0 16px; font-size: 1em; white-space: nowrap; text-align: center; transition: color 0.1s; letter-spacing: 0.03em; }
     .cmd-bar button:hover { color: #fff; }
     .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
     .cmd-bar button:focus:not(:focus-visible) { outline: none; }
     .cmd-bar button.active { color: #fff; }
-    .cmd-bar .sep { color: #333; margin: 0; display: flex; align-items: center; }
+    .cmd-sep { width: 1px; background: #444; margin: 6px 16px; }
     .filter-active .artist-item:not(.hearted) { display: none; }
+    .filter-active .tt-block:not(.hearted):not(:has(.tt-artist-row.hearted)) { opacity: 0.15; }
 
     /* --- Modals --- */
     html.scroll-locked, html.scroll-locked body { overflow:hidden; }
@@ -214,22 +257,250 @@ def render_output_html(
     .qr-wrap { display:block; }
     @media (max-width:480px) { .qr-wrap { display:none; } .modal-box .tabs { flex-direction:column; } }
     """)
+    if has_timetable:
+        parts.append("""
+    /* --- Timetable view --- */
+
+    /* Filter bar */
+    .filter-bar { position: sticky; top: 98px; z-index: 20; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 10px 0 8px; margin: 0.83em 0 8px; gap: 8px; border-bottom: 1px solid #ccc; }
+    .day-tabs { display: flex; gap: 2px; }
+    .period-tabs { display: flex; gap: 2px; }
+    .day-tab, .period-tab { padding: 7px 14px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; cursor: pointer; font-size: 0.82em; font-weight: 600; transition: background 0.15s, border-color 0.15s; }
+    .day-tab:hover, .period-tab:hover { background: #eee; }
+    .day-tab.active { background: #111; color: #fff; border-color: #111; }
+    .period-tab.active { background: #333; color: #fff; border-color: #333; }
+
+    /* Floor headers */
+    .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: 10; background: #fff; padding: 8px 0 6px; margin: 24px 0 12px; }
+    .floor-header-bar.fade-after { position: sticky; }
+    .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+    .floor-header-bar.stuck::after { opacity: 1; }
+    .floor-header-gutter { }
+    .floor-header { text-align: center; font-weight: 700; font-size: 0.85em; padding: 8px 12px; border-radius: 999px; margin: 0 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Timetable grid */
+    .timetable-panel { display: none; }
+    .timetable-panel.active { display: block; }
+    .timetable { display: grid; position: relative; margin-bottom: 4px; }
+    .time-gutter { grid-column: 1; position: sticky; left: 0; z-index: 5; background: #fff; width: 40px; }
+    .time-label { font-size: 0.7em; color: #999; text-align: right; padding-right: 8px; line-height: 1; position: relative; top: calc(-0.5em + 1px); }
+    .grid-line { grid-column: 2 / -1; border-top: 1px solid #ccc; pointer-events: none; }
+    .grid-line.hour { border-top: 1px solid #aaa; }
+    .grid-line.half { border-top: 1px dashed #ccc; }
+
+    /* Artist blocks */
+    .tt-block { border-radius: 6px; margin: 5px 3px 4px; padding: 8px 10px; font-size: 0.82em; cursor: pointer; position: relative; display: flex; flex-direction: row; align-items: flex-start; border: 1px solid #e0e0e0; transition: opacity 0.15s; min-height: 0; }
+    .tt-text { width: 0; flex-grow: 1; display: flex; flex-direction: column; }
+    .tt-block .tt-time-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+    .tt-block .tt-time { font-size: 0.85em; color: #999; white-space: nowrap; line-height: 1; }
+    .tt-artist-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0; }
+    .tt-photo-wrap { position: relative; flex-shrink: 0; width: 34px; height: 34px; }
+    .tt-photo { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; display: block; }
+    .tt-photo-placeholder { width: 34px; height: 34px; border-radius: 4px; background: #eee; }
+    .tt-block .tt-name { font-weight: 700; font-size: 1em; white-space: nowrap; overflow: hidden; line-height: 1.3; min-width: 0; flex: 1; }
+
+    /* Per-artist heart (bottom-right corner inside the photo) */
+    .tt-photo-heart { position: absolute; bottom: -5px; right: -5px; background: rgba(255,255,255,0.85); border: none; cursor: pointer; padding: 2px; line-height: 0; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; z-index: 1; }
+    .tt-photo-heart svg { width: 12px; height: 12px; fill: none; stroke: #ccc; stroke-width: 2; transition: fill 0.15s, stroke 0.15s; }
+    .tt-photo-heart.active svg { fill: #e53e3e; stroke: #e53e3e; }
+    .tt-photo-heart:hover:not(.active) svg { stroke: #999; }
+
+    /* Calendar icon */
+    .tt-cal { background: none; border: none; cursor: pointer; padding: 0; line-height: 0; flex-shrink: 0; }
+    .tt-cal svg { width: 16px; height: 16px; color: #ccc; transition: color 0.15s; }
+    .tt-cal.active svg { color: #4a90d9; }
+    .tt-cal:hover:not(.active) svg { color: #999; }
+    .tt-block.scheduled { box-shadow: inset 0 0 0 2px #4a90d9; }
+    .filter-schedule .tt-block:not(.scheduled) { opacity: 0.15; }
+
+    /* Now line */
+    .now-line { grid-column: 2 / -1; border-top: 2px solid #e53e3e; pointer-events: none; z-index: 8; position: relative; }
+    .now-line::before { content: 'NOW'; position: absolute; left: -48px; top: -8px; font-size: 9px; font-weight: 700; color: #e53e3e; letter-spacing: 0.05em; }
+
+    /* Floor colors */
+    .floor-werksschwimmbad { background: rgba(219, 234, 254, 0.88); }
+    .floor-salzlager { background: rgba(254, 243, 199, 0.88); }
+    .floor-koksofenbatterie { background: rgba(252, 231, 243, 0.88); }
+    .floor-eisbahn { background: rgba(209, 250, 229, 0.88); }
+    .floor-listening-floor { background: rgba(237, 233, 254, 0.88); }
+    .floor-unknown { background: rgba(243, 244, 246, 0.88); }
+    .floor-header.floor-werksschwimmbad { background: #dbeafe; }
+    .floor-header.floor-salzlager { background: #fef3c7; }
+    .floor-header.floor-koksofenbatterie { background: #fce7f3; }
+    .floor-header.floor-eisbahn { background: #d1fae5; }
+    .floor-header.floor-listening-floor { background: #ede9fe; }
+
+    /* Corner cell — only visible on mobile */
+    .tt-corner-cell { display: none; }
+
+    /* Mobile table — hidden on desktop */
+    .tt-table-wrap { display: none; }
+
+    /* Artist detail popup */
+    .tt-popup { position: fixed; z-index: 200; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 16px; width: 320px; max-width: 90vw; visibility: hidden; opacity: 0; pointer-events: none; }
+    .tt-popup.open { visibility: visible; opacity: 1; pointer-events: auto; }
+    .tt-popup .popup-meta { font-size: 0.8em; color: #888; margin-bottom: 10px; }
+    .tt-popup .popup-artist { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .tt-popup .popup-photo { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+    .tt-popup .popup-photo-placeholder { width: 48px; height: 48px; border-radius: 6px; background: #eee; flex-shrink: 0; }
+    .tt-popup .popup-name { font-weight: 700; font-size: 1em; }
+    .tt-popup .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+    .tt-popup .links a { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: #555; font-size: 0.75em; }
+    .tt-popup .links a:hover { color: #111; }
+
+    @media (max-width: 768px) {
+      .floor-header { font-size: 0.7em; padding: 6px 2px; }
+      .tt-block { font-size: 0.72em; padding: 6px 7px; margin: 2px; gap: 5px; }
+      .day-tab { padding: 6px 10px; font-size: 0.8em; }
+    }
+
+    /* Hamburger menu (hidden on desktop) */
+    .hamburger { display: none; }
+    .view-label { display: none; }
+    .cmd-dropdown { display: none; }
+    .menu-overlay { display: none; }
+
+    /* Floor tabs (mobile timetable floor navigation) */
+    .floor-tabs-wrap { display: none; }
+
+    @media (max-width: 480px) {
+      body { padding: 0 12px; }
+      h1 { font-size: 1.5em; padding: 8px 0 6px; top: 48px; }
+
+      /* Mobile cmd bar — 48px, full width, label left, hamburger right */
+      .cmd-bar { height: 48px; padding: 0 16px; margin-left: -12px; margin-right: -12px; }
+      .cmd-bar .cmd-group { display: none; }
+      .cmd-bar .cmd-group-right { display: none !important; }
+      .cmd-sep { display: none; }
+
+      /* View label — left aligned, 16px */
+      .cmd-bar .view-label { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; }
+
+      /* Hamburger — 48x48 tap target, 28px SVG */
+      .hamburger { display: flex; align-items: center; justify-content: center; background: none; color: #fff; border: none; cursor: pointer; width: 48px; height: 48px; position: absolute; right: 4px; top: 0; -webkit-tap-highlight-color: transparent; }
+      .hamburger svg { width: 24px; height: 24px; min-width: 24px; min-height: 24px; }
+
+      /* Dropdown — full width, same bg as bar, 16px font matching label */
+      .cmd-dropdown { position: fixed; top: 48px; left: 0; right: 0; z-index: 49; background: #111; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+      .cmd-dropdown.open { display: flex; }
+      .cmd-dropdown button { background: none; color: #aaa; border: none; border-top: 1px solid #222; cursor: pointer; padding: 16px; font-size: 16px; font-family: inherit; text-align: left; -webkit-tap-highlight-color: transparent; }
+      .cmd-dropdown button:active { background: #222; }
+      .cmd-dropdown button.active { color: #fff; font-weight: 600; }
+
+      /* Overlay behind dropdown (below hamburger) */
+      .menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
+
+      /* Photos bigger on mobile single-floor view */
+      .tt-photo, .tt-photo-placeholder { width: 30px; height: 30px; border-radius: 4px; }
+
+      /* Hide CSS grid timetable on mobile — replaced by table */
+      .floor-tabs-wrap { display: none !important; }
+      .floor-header-bar { display: none !important; }
+      .tt-time-col { display: none !important; }
+      .tt-floor-pill { display: none !important; }
+      .tt-corner-cell { display: none !important; }
+      .timetable { display: none !important; }
+      .tt-scroll-wrap { display: none !important; }
+
+      /* Show mobile table — floor headers sticky, two nested divs for scroll */
+      .tt-table-wrap { display: block !important; min-height: 300px; top: -10px; position: relative; }
+
+      /* Mobile floor header bar — sticky, synced horizontally via JS */
+      .mobile-fhb { display: grid !important; margin: 0 !important; padding: 8px 0 4px !important; position: sticky; top: 139px; z-index: 9; background: #fff; overflow: hidden; --col-w: 40vw; }
+      .mobile-fhb .floor-header-gutter { position: sticky; left: 0; z-index: 1; background: #fff; }
+      .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+      .floor-header-bar.stuck::after { opacity: 1; }
+
+      /* Outer div — no native scroll, JS-driven */
+      .tt-v-scroll { overflow: hidden; }
+
+      /* Inner div — no native scroll, JS-driven */
+      .tt-h-scroll { overflow: hidden; }
+
+      .tt-table { border-collapse: separate; border-spacing: 0; }
+      .tt-table thead { display: none; }
+      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: #fff; font-size: 0.7em; color: #999; text-align: right; padding-right: 6px; vertical-align: top; width: 40px; min-width: 40px; }
+      .tt-table tbody td { vertical-align: top; padding: 0; }
+      .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; scroll-snap-align: start; scroll-snap-stop: always; }
+      .tt-table tbody tr { height: 16px; }
+
+      /* Floor colors on header pills */
+      .floor-header.floor-eisbahn { background: #d1fae5; }
+      .floor-header.floor-salzlager { background: #fef3c7; }
+      .floor-header.floor-koksofenbatterie { background: #fce7f3; }
+      .floor-header.floor-werksschwimmbad { background: #dbeafe; }
+      .floor-header.floor-listening-floor { background: #ede9fe; }
+
+
+      /* Artist blocks inside table cells */
+      .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 1px; }
+
+      /* Filter bar compact */
+      .filter-bar { padding: 6px 0; margin: 0 0 4px; top: 100px; }
+      .day-tab, .period-tab { padding: 5px 10px; font-size: 0.78em; }
+
+      /* Popup full width on mobile */
+      .tt-popup { width: calc(100vw - 24px); max-width: none; left: 12px !important; }
+    }
+    """)
     parts.append("  </style>")
     parts.append("</head>")
     parts.append("<body>")
     parts.append('  <div class="cmd-bar" id="cmd-bar">')
+    parts.append('    <span class="view-label" id="view-label">Line-up</span>')
+    parts.append('    <div class="cmd-group">')
+    if has_timetable:
+        parts.append(
+            '      <button onmousedown="this.blur()" onclick="switchView(\'list\', this)" id="btn-list" class="active view-btn">Line-up</button>'
+        )
+        parts.append(
+            '      <button onmousedown="this.blur()" onclick="switchView(\'timetable\', this)" id="btn-timetable" class="view-btn">Timetable</button>'
+        )
+        parts.append('      <span class="cmd-sep"></span>')
     parts.append(
-        '    <button onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">Show My Picks</button>'
+        '      <button onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">Show My Picks</button>'
     )
-    parts.append('    <span class="sep">|</span>')
+    if has_timetable:
+        parts.append(
+            '      <button onmousedown="this.blur()" onclick="toggleScheduleFilter(this)" id="btn-schedule" style="display:none">Show My Schedule</button>'
+        )
+    parts.append("    </div>")
+    parts.append('    <div class="cmd-group cmd-group-right">')
     parts.append(
-        '    <button onmousedown="this.blur()" onclick="openShareModal()">Share My Picks</button>'
+        '      <button onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
     )
-    parts.append('    <span class="sep">|</span>')
     parts.append(
-        '    <button onmousedown="this.blur()" onclick="openSyncModal()">Sync My Picks</button>'
+        '      <button onmousedown="this.blur()" onclick="openSyncModal()">Sync</button>'
+    )
+    parts.append("    </div>")
+    parts.append(
+        '    <button class="hamburger" onclick="toggleMenu()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>'
     )
     parts.append("  </div>")
+
+    # Hamburger dropdown menu
+    parts.append('  <div class="cmd-dropdown" id="cmd-dropdown">')
+    if has_timetable:
+        parts.append(
+            "    <button onclick=\"switchView('list', document.getElementById('btn-list')); closeMenu()\" id=\"dd-list\">Line-up</button>"
+        )
+        parts.append(
+            "    <button onclick=\"switchView('timetable', document.getElementById('btn-timetable')); closeMenu()\" id=\"dd-timetable\">Timetable</button>"
+        )
+    parts.append(
+        '    <button onclick="toggleFilter(document.getElementById(\'btn-filter\')); closeMenu()" id="dd-filter">Show My Picks</button>'
+    )
+    if has_timetable:
+        parts.append(
+            '    <button onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\')); closeMenu()" id="dd-schedule" style="display:none">Show My Schedule</button>'
+        )
+    parts.append('    <button onclick="openShareModal(); closeMenu()">Share</button>')
+    parts.append('    <button onclick="openSyncModal(); closeMenu()">Sync</button>')
+    parts.append("  </div>")
+    parts.append(
+        '  <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>'
+    )
+
     parts.append(f"  <h1>{esc(title)}</h1>")
 
     # Share modal
@@ -239,7 +510,7 @@ def render_output_html(
     parts.append('    <div class="modal-box">')
     parts.append('      <h3 id="m-share-title">Share My Picks</h3>')
     parts.append(
-        '      <p class="sub" style="color:inherit">Friends can view your picks. Click the link to copy it.</p>'
+        '      <p class="sub" style="color:inherit">Friends can view your picks and schedule. Click the link to copy it.</p>'
     )
     parts.append(
         '      <input type="text" readonly class="modal-link" id="share-link">'
@@ -273,7 +544,7 @@ def render_output_html(
     parts.append('          <p class="lbl">On your other device:</p>')
     parts.append('          <div class="steps">')
     parts.append("            <p>Open <strong>stonetechno.deftlab.dev</strong></p>")
-    parts.append("            <p>Click <strong>Sync My Picks</strong></p>")
+    parts.append("            <p>Click <strong>Sync</strong></p>")
     parts.append(
         "            <p>Click <strong>Receive from another device</strong></p>"
     )
@@ -376,6 +647,10 @@ def render_output_html(
         if sec["date"] not in dates_seen:
             dates_seen.append(sec["date"])
 
+    # --- List view ---
+    if has_timetable:
+        parts.append('  <div id="list-view">')
+
     for date_str in dates_seen:
         date_heading = _format_date_heading(date_str)
         parts.append('  <section class="date-section">')
@@ -423,9 +698,502 @@ def render_output_html(
 
         parts.append("  </section>")
 
+    if has_timetable:
+        parts.append("  </div>")  # end #list-view
+
+    # --- Timetable view ---
+    if has_timetable:
+        # Build timetable data
+        timetable_data: list[dict] = []
+        for date_str in dates_seen:
+            for sec in sections_by_date[date_str]:
+                artists = assignments.get(sec["key"], [])
+                timed = [
+                    a for a in artists if a.get("start_time") and a.get("end_time")
+                ]
+                if not timed:
+                    continue
+
+                canonical_floor_order = [
+                    "eisbahn",
+                    "koksofenbatterie",
+                    "listening-floor",
+                    "salzlager",
+                    "werksschwimmbad",
+                ]
+                by_floor: dict[str, list[dict]] = {}
+                for a in timed:
+                    fid = a.get("location_id") or "unknown"
+                    by_floor.setdefault(fid, []).append(a)
+                floor_ids = [f for f in canonical_floor_order if f in by_floor] + [
+                    f for f in by_floor if f not in canonical_floor_order
+                ]
+
+                all_starts = [_parse_time(a["start_time"]) for a in timed]
+                all_ends = [_parse_time(a["end_time"]) for a in timed]
+                is_night = sec["period"] == "night"
+                if is_night:
+                    adjusted_ends = []
+                    for e in all_ends:
+                        adjusted_ends.append(e + 1440 if e < 12 * 60 else e)
+                    adjusted_starts = []
+                    for s in all_starts:
+                        adjusted_starts.append(s + 1440 if s < 12 * 60 else s)
+                    grid_start = min(adjusted_starts)
+                    grid_end = max(adjusted_ends)
+                else:
+                    grid_start = min(all_starts)
+                    grid_end = max(all_ends)
+
+                grid_start = (grid_start // 60) * 60
+
+                timetable_data.append(
+                    {
+                        "date": date_str,
+                        "period": sec["period"],
+                        "key": sec["key"],
+                        "floor_ids": floor_ids,
+                        "by_floor": by_floor,
+                        "grid_start": grid_start,
+                        "grid_end": grid_end,
+                        "is_night": is_night,
+                    }
+                )
+
+        parts.append('  <div id="timetable-view" style="display:none">')
+
+        # Filter bar (day/period tabs)
+        parts.append('  <div class="filter-bar">')
+        parts.append('    <div class="day-tabs" id="day-tabs">')
+        for i, date_str in enumerate(dates_seen):
+            active = " active" if i == 0 else ""
+            parts.append(
+                f'      <button class="day-tab{active}" onclick="switchDay(\'{esc(date_str)}\', this)">'
+                f"{esc(_format_date_tab(date_str))}</button>"
+            )
+        parts.append("    </div>")
+        parts.append('    <div class="period-tabs" id="period-tabs"></div>')
+        parts.append("  </div>")
+
+        # Render timetable panels per section
+        heart_svg = '<svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>'
+
+        for td in timetable_data:
+            tt_date_str = td["date"]
+            period = td["period"]
+            panel_id = f"panel-{tt_date_str}-{period}"
+            floor_ids = td["floor_ids"]
+            by_floor = td["by_floor"]
+            grid_start = td["grid_start"]
+            grid_end = td["grid_end"]
+            is_night = td["is_night"]
+            num_floors = len(floor_ids)
+
+            total_minutes = grid_end - grid_start
+            px_per_min = 2
+            grid_height = total_minutes * px_per_min
+
+            parts.append(
+                f'  <div class="timetable-panel" data-date="{esc(tt_date_str)}" data-period="{esc(period)}" '
+                f'data-grid-start="{grid_start}" data-grid-end="{grid_end}" '
+                f'data-is-night="{1 if is_night else 0}" id="{esc(panel_id)}">'
+            )
+
+            # Floor tabs (not used on current mobile, kept for compatibility)
+            parts.append('    <div class="floor-tabs-wrap">')
+            parts.append(
+                f'    <div class="floor-tabs" id="floor-tabs-{esc(panel_id)}">'
+            )
+            for fi, fid in enumerate(floor_ids):
+                loc_name = locations.get(fid, {}).get("name", fid)
+                active_cls = " active" if fi == 0 else ""
+                parts.append(
+                    f'      <button class="floor-tab floor-{esc(fid)}{active_cls}" '
+                    f"onclick=\"switchFloor('{esc(panel_id)}', {fi})\">"
+                    f"{esc(loc_name)}</button>"
+                )
+            parts.append("    </div>")
+            parts.append("    </div>")
+
+            # Scroll-wrap (kept for structure; tt-time-col hidden on mobile via CSS)
+            parts.append('    <div class="tt-scroll-wrap" style="position: relative;">')
+            parts.append('    <div class="tt-time-col" style="display:none;">')
+            hour_start_tc = grid_start // 60
+            hour_end_tc = (grid_end + 59) // 60
+            for h in range(hour_start_tc, hour_end_tc):
+                display_h = h % 24
+                y_pos = (h * 60 - grid_start) * px_per_min
+                parts.append(
+                    f'      <div class="time-label" style="position:absolute; top:{y_pos}px; left:0; width:40px; transform:translateY(-50%);">{display_h:02d}:00</div>'
+                )
+            parts.append("    </div>")
+
+            # Floor header bar (outside scroll container — CSS sticky vertical, JS touch horizontal)
+            parts.append(
+                f'    <div class="floor-header-bar" '
+                f'style="grid-template-columns: 40px repeat({num_floors}, var(--col-w, 1fr));">'
+            )
+            parts.append('      <div class="floor-header-gutter"></div>')
+            for fid in floor_ids:
+                loc_name = locations.get(fid, {}).get("name", fid)
+                parts.append(
+                    f'      <div class="floor-header floor-{esc(fid)}">{esc(loc_name)}</div>'
+                )
+            parts.append("    </div>")
+
+            parts.append('    <div class="tt-scroll">')
+
+            parts.append(
+                f'    <div class="timetable" data-num-floors="{num_floors}" style="grid-template-columns: 40px repeat({num_floors}, var(--col-w, 1fr)); grid-template-rows: auto repeat({total_minutes}, {px_per_min}px);">'
+            )
+
+            # Corner cell (row 1, col 1 — sticky both axes on mobile)
+            parts.append(
+                '      <div class="tt-corner-cell" style="grid-column: 1; grid-row: 1;"></div>'
+            )
+
+            # Floor pills inside grid (row 1, hidden on desktop, shown on mobile)
+            for col, fid in enumerate(floor_ids, 2):
+                loc_name = locations.get(fid, {}).get("name", fid)
+                parts.append(
+                    f'      <div class="tt-floor-pill floor-header floor-{esc(fid)}" style="display:none; grid-column: {col}; grid-row: 1; scroll-snap-align: start;">{esc(loc_name)}</div>'
+                )
+
+            # Time labels and grid lines
+            hour_start = grid_start // 60
+            hour_end = (grid_end + 59) // 60
+            for h in range(hour_start, hour_end):
+                row = (h * 60 - grid_start) + 2
+                display_h = h % 24
+                parts.append(
+                    f'      <div class="time-label" style="grid-column: 1; grid-row: {row};">{display_h:02d}:00</div>'
+                )
+                parts.append(
+                    f'      <div class="grid-line hour" style="grid-row: {row};"></div>'
+                )
+                half_row = row + 30
+                if half_row < (grid_end - grid_start) + 2:
+                    parts.append(
+                        f'      <div class="grid-line half" style="grid-row: {half_row};"></div>'
+                    )
+
+            # Now line placeholder
+            parts.append(
+                '      <div class="now-line" style="grid-row: 2; display: none;" data-now-line></div>'
+            )
+
+            # Artist blocks
+            for col, fid in enumerate(floor_ids, 2):
+                floor_artists = by_floor.get(fid, [])
+                slots: dict[tuple[str, str], list[dict]] = {}
+                for a in floor_artists:
+                    key = (a["start_time"], a["end_time"])
+                    slots.setdefault(key, []).append(a)
+
+                for (st, et), group in slots.items():
+                    start_min = _parse_time(st)
+                    end_min = _parse_time(et)
+                    if is_night:
+                        if start_min < 12 * 60:
+                            start_min += 1440
+                        if end_min < 12 * 60:
+                            end_min += 1440
+
+                    row_start = (start_min - grid_start) + 2
+                    row_end = (end_min - grid_start) + 2
+
+                    s_display = _format_hhmm(start_min)
+                    e_display = _format_hhmm(end_min)
+                    loc_name = locations.get(fid, {}).get("name", fid)
+
+                    card_key = ":".join(
+                        [a.get("overlay_id", "") for a in group]
+                        + [tt_date_str, period, fid]
+                    )
+                    artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
+
+                    names = " b2b ".join(a.get("name", "") for a in group)
+                    data_attrs = (
+                        f'data-artist-id="{esc(artist_id)}" '
+                        f'data-name="{esc(names)}" '
+                        f'data-time="{esc(s_display)} – {esc(e_display)}" '
+                        f'data-floor="{esc(loc_name)}" '
+                        f"data-artists='{esc(_artists_json(group, photos_prefix))}'"
+                    )
+
+                    cal_svg = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>'
+                    is_b2b = len(group) > 1
+
+                    cal_btn = (
+                        f'<button class="tt-cal" onclick="event.stopPropagation(); toggleSchedule(this)" '
+                        f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
+                    )
+                    parts.append(
+                        f'      <div class="tt-block floor-{esc(fid)}" data-floor-col="{col - 2}" style="grid-column: {col}; grid-row: {row_start} / {row_end};" {data_attrs}>'
+                        f'<div class="tt-text">'
+                        f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
+                    )
+                    for a in group:
+                        photo_local = a.get("photo_local") or ""
+                        name = a.get("name", "")
+                        a_card_key = (
+                            f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{fid}"
+                        )
+                        a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
+                        if photo_local:
+                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="" loading="lazy">'
+                        else:
+                            photo_el = '<div class="tt-photo-placeholder"></div>'
+                        heart_btn = (
+                            f'<button class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
+                            f'aria-label="Add to favorites" aria-pressed="false">{heart_svg}</button>'
+                        )
+                        parts.append(
+                            f'<div class="tt-artist-row" data-artist-id="{esc(a_artist_id)}">'
+                            f'<div class="tt-photo-wrap">{photo_el}{heart_btn}</div>'
+                            f'<span class="tt-name">{esc(name)}</span></div>'
+                        )
+                    parts.append("</div></div>")
+
+            parts.append("    </div>")  # .timetable
+            parts.append("    </div>")  # .tt-scroll
+            parts.append("    </div>")  # .tt-scroll-wrap
+
+            # Table uses 5-minute rows, starts 5 min early for label centering
+            step = 5
+            table_start = grid_start - step
+            total_rows = (total_minutes + step) // step + 1
+
+            # Mobile floor header bar (separate from desktop one, direct child of panel)
+            parts.append(
+                f'    <div class="floor-header-bar mobile-fhb" '
+                f'style="display:none; grid-template-columns: 40px repeat({num_floors}, var(--col-w, 1fr));">'
+            )
+            parts.append('      <div class="floor-header-gutter"></div>')
+            for fid in floor_ids:
+                loc_name = locations.get(fid, {}).get("name", fid)
+                parts.append(
+                    f'      <div class="floor-header floor-{esc(fid)}">{esc(loc_name)}</div>'
+                )
+            parts.append("    </div>")
+
+            # --- Mobile table (hidden on desktop, shown on mobile via CSS) ---
+            parts.append('    <div class="tt-table-wrap">')
+            parts.append('    <div class="tt-v-scroll">')
+            parts.append('    <div class="tt-h-scroll">')
+            # Main table
+            parts.append('    <table class="tt-table">')
+            parts.append('    <colgroup><col style="width:40px;min-width:40px;">')
+            for fid in floor_ids:
+                parts.append('<col style="width:40vw;min-width:40vw;">')
+            parts.append("</colgroup>")
+
+            # thead — floor name headers
+            parts.append("    <thead><tr><th></th>")
+            for fid in floor_ids:
+                loc_name = locations.get(fid, {}).get("name", fid)
+                parts.append(
+                    f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span></th>'
+                )
+            parts.append("</tr></thead>")
+
+            # tbody — one row per minute
+            # Build a map of artist blocks per floor column:
+            #   artist_at[(floor_index, minute_offset)] = (duration, block_html)
+            # Also track which cells are covered by rowspan
+            artist_at: dict[tuple[int, int], tuple[int, str]] = {}
+            for fi, fid in enumerate(floor_ids):
+                floor_artists = by_floor.get(fid, [])
+                slots_table: dict[tuple[str, str], list[dict]] = {}
+                for a in floor_artists:
+                    key = (a["start_time"], a["end_time"])
+                    slots_table.setdefault(key, []).append(a)
+
+                for (st, et), group in slots_table.items():
+                    start_min = _parse_time(st)
+                    end_min = _parse_time(et)
+                    if is_night:
+                        if start_min < 12 * 60:
+                            start_min += 1440
+                        if end_min < 12 * 60:
+                            end_min += 1440
+
+                    offset = start_min - grid_start
+                    duration = end_min - start_min
+                    if duration <= 0 or offset < 0:
+                        continue
+
+                    s_display = _format_hhmm(start_min)
+                    e_display = _format_hhmm(end_min)
+                    loc_name = locations.get(fid, {}).get("name", fid)
+
+                    card_key = ":".join(
+                        [a.get("overlay_id", "") for a in group]
+                        + [tt_date_str, period, fid]
+                    )
+                    artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
+                    names = " b2b ".join(a.get("name", "") for a in group)
+                    data_attrs = (
+                        f'data-artist-id="{esc(artist_id)}" '
+                        f'data-name="{esc(names)}" '
+                        f'data-time="{esc(s_display)} – {esc(e_display)}" '
+                        f'data-floor="{esc(loc_name)}" '
+                        f"data-artists='{esc(_artists_json(group, photos_prefix))}'"
+                    )
+
+                    cal_svg = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>'
+                    cal_btn = (
+                        f'<button class="tt-cal" onclick="event.stopPropagation(); toggleSchedule(this)" '
+                        f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
+                    )
+
+                    block_parts: list[str] = []
+                    block_parts.append(
+                        f'<div class="tt-block floor-{esc(fid)}" {data_attrs}>'
+                        f'<div class="tt-text">'
+                        f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
+                    )
+                    for a in group:
+                        photo_local = a.get("photo_local") or ""
+                        name = a.get("name", "")
+                        a_card_key = (
+                            f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{fid}"
+                        )
+                        a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
+                        if photo_local:
+                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="" loading="lazy">'
+                        else:
+                            photo_el = '<div class="tt-photo-placeholder"></div>'
+                        heart_btn = (
+                            f'<button class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
+                            f'aria-label="Add to favorites" aria-pressed="false">{heart_svg}</button>'
+                        )
+                        block_parts.append(
+                            f'<div class="tt-artist-row" data-artist-id="{esc(a_artist_id)}">'
+                            f'<div class="tt-photo-wrap">{photo_el}{heart_btn}</div>'
+                            f'<span class="tt-name">{esc(name)}</span></div>'
+                        )
+                    block_parts.append("</div></div>")
+                    block_html = "".join(block_parts)
+
+                    artist_at[(fi, offset)] = (duration, block_html)
+
+            # Remap artist_at to 5-minute row indices (offset by 1 for the early start)
+            artist_at_5: dict[tuple[int, int], tuple[int, str]] = {}
+            for (fi, offset), (duration, block_html) in artist_at.items():
+                row_idx = (offset // step) + 1  # +1 for the early start row
+                row_span = max(1, round(duration / step))
+                artist_at_5[(fi, row_idx)] = (row_span, block_html)
+
+            # Track covered floor cells
+            covered: set[tuple[int, int]] = set()
+            for (fi, row_idx), (row_span, _) in artist_at_5.items():
+                for r in range(1, row_span):
+                    covered.add((fi, row_idx + r))
+
+            # Track time cells covered by label rowspan
+            time_covered: set[int] = set()
+
+            parts.append("    <tbody>")
+            for row_idx in range(total_rows):
+                actual_min = table_start + row_idx * step
+                parts.append("    <tr>")
+
+                # Time label cell — rowspan=2 centered on the boundary
+                if row_idx in time_covered:
+                    pass  # covered by previous label's rowspan
+                else:
+                    next_min = actual_min + step
+                    if next_min % 60 == 0:
+                        display_h = (next_min // 60) % 24
+                        parts.append(
+                            f'<td class="tt-time-td tt-line-hour" rowspan="2" style="vertical-align:middle">{display_h:02d}:00</td>'
+                        )
+                        time_covered.add(row_idx + 1)
+                    elif next_min % 30 == 0:
+                        display_h = (next_min // 60) % 24
+                        parts.append(
+                            f'<td class="tt-time-td tt-line-half" rowspan="2" style="vertical-align:middle">{display_h:02d}:30</td>'
+                        )
+                        time_covered.add(row_idx + 1)
+                    else:
+                        parts.append('<td class="tt-time-td"></td>')
+
+                # Floor cells
+                for fi in range(len(floor_ids)):
+                    if (fi, row_idx) in covered:
+                        continue
+                    if (fi, row_idx) in artist_at_5:
+                        row_span, block_html = artist_at_5[(fi, row_idx)]
+                        parts.append(
+                            f'<td rowspan="{row_span}" style="vertical-align:top;padding:0;position:relative;">'
+                            f"{block_html}</td>"
+                        )
+                    else:
+                        parts.append("<td></td>")
+
+                parts.append("</tr>")
+
+            parts.append("    </tbody></table>")
+            parts.append("    </div>")  # .tt-h-scroll
+            parts.append("    </div>")  # .tt-v-scroll
+            parts.append("    </div>")  # .tt-table-wrap
+            # --- End mobile table ---
+
+            parts.append("  </div>")  # .timetable-panel
+
+        # Artist detail popup
+        parts.append('  <div class="tt-popup" id="tt-popup">')
+        parts.append('    <div class="popup-meta" id="popup-meta"></div>')
+        parts.append('    <div id="popup-artists"></div>')
+        parts.append("  </div>")
+
+        parts.append("  </div>")  # end #timetable-view
+
     qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
     parts.append(f"  <script>{qr_js}</script>")
     parts.append("  <script>")
+    if has_timetable:
+        parts.append("""
+    // Immediate view restore before anything renders
+    (function() {
+      var v = localStorage.getItem('stc_view');
+      if (v === 'timetable') {
+        var lv = document.getElementById('list-view');
+        var tv = document.getElementById('timetable-view');
+        if (lv) lv.style.display = 'none';
+        if (tv) tv.style.display = '';
+        var h1 = document.querySelector('h1');
+        if (h1) h1.textContent = h1.textContent.replace('Line-up', 'Timetable');
+        var bar = document.getElementById('cmd-bar');
+        var vl = document.getElementById('view-label');
+        if (vl) vl.textContent = 'Timetable';
+        var bl = document.getElementById('btn-list');
+        var bt = document.getElementById('btn-timetable');
+        if (bl) bl.classList.remove('active');
+        if (bt) bt.classList.add('active');
+        var ddl = document.getElementById('dd-list');
+        var ddt = document.getElementById('dd-timetable');
+        if (ddl) ddl.style.display = '';
+        if (ddt) ddt.style.display = 'none';
+      }
+    })();
+    """)
+
+    # Emit timetable section data for JS (when timetable is present)
+    if has_timetable:
+        sections_json = _json.dumps(
+            [
+                {"date": td["date"], "period": td["period"], "key": td["key"]}
+                for td in timetable_data
+            ]
+        )
+        parts.append(f"    const TT_SECTIONS = {sections_json};")
+        parts.append(f"    const TT_DATES = {_json.dumps(dates_seen)};")
+        parts.append("    const HAS_TIMETABLE = true;")
+    else:
+        parts.append("    const HAS_TIMETABLE = false;")
+
     parts.append("""
     // Sticky gradient observer
     document.querySelectorAll('.fade-after').forEach(el => {
@@ -452,20 +1220,24 @@ def render_output_html(
     let sessionId = localStorage.getItem('stc_session_id');
     let shareToken = localStorage.getItem('stc_share_token');
     let localPicks; try { localPicks = new Set(JSON.parse(localStorage.getItem('stc_picks') || '[]')); } catch { localPicks = new Set(); localStorage.removeItem('stc_picks'); }
+    let localSchedule; try { localSchedule = new Set(JSON.parse(localStorage.getItem('stc_schedule') || '[]')); } catch { localSchedule = new Set(); localStorage.removeItem('stc_schedule'); }
     let readOnly = false;
     let filterActive = false;
+    let scheduleFilterActive = false;
+    let currentView = localStorage.getItem('stc_view') || 'list';
 
     function saveLocal() {
       localStorage.setItem('stc_picks', JSON.stringify([...localPicks]));
+      localStorage.setItem('stc_schedule', JSON.stringify([...localSchedule]));
       updateUI();
     }
 
     function updateUI() {
-      const btn = document.getElementById('btn-filter');
-      const n = localPicks.size;
-      btn.textContent = 'Show My Picks';
-      document.querySelectorAll('.artist-item').forEach(li => {
-        li.classList.toggle('hearted', localPicks.has(li.dataset.artistId));
+      document.querySelectorAll('[data-artist-id]').forEach(el => {
+        el.classList.toggle('hearted', localPicks.has(el.dataset.artistId));
+      });
+      document.querySelectorAll('.tt-block[data-artist-id]').forEach(el => {
+        el.classList.toggle('scheduled', localSchedule.has(el.dataset.artistId));
       });
     }
 
@@ -473,6 +1245,18 @@ def render_output_html(
       document.querySelectorAll('.heart-btn').forEach(btn => {
         const id = btn.closest('[data-artist-id]').dataset.artistId;
         const active = localPicks.has(id);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active);
+      });
+      document.querySelectorAll('.tt-heart, .tt-photo-heart').forEach(btn => {
+        const id = btn.closest('[data-artist-id]').dataset.artistId;
+        const active = localPicks.has(id);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active);
+      });
+      document.querySelectorAll('.tt-cal').forEach(btn => {
+        const id = btn.closest('[data-artist-id]').dataset.artistId;
+        const active = localSchedule.has(id);
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-pressed', active);
       });
@@ -486,6 +1270,7 @@ def render_output_html(
       btn.classList.toggle('active', filterActive);
       updateUI();
       updateGroupVisibility();
+      syncDropdownState();
     }
 
     function updateGroupVisibility() {
@@ -534,6 +1319,9 @@ def render_output_html(
           for (const id of localPicks) {
             fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {});
           }
+          for (const id of localSchedule) {
+            fetch(API + '/session/' + sessionId + '/schedule/' + id, {method: 'POST'}).catch(() => {});
+          }
         } catch {}
         finally { _sessionPromise = null; }
       })();
@@ -544,16 +1332,16 @@ def render_output_html(
 
     async function toggleHeart(btn) {
       if (readOnly) return;
-      const li = btn.closest('[data-artist-id]');
-      const id = li.dataset.artistId;
+      const el = btn.closest('[data-artist-id]');
+      const id = el.dataset.artistId;
       const adding = !localPicks.has(id);
-      const name = li.querySelector('.artist-name')?.textContent || id;
+      const name = el.querySelector('.artist-name')?.textContent || el.dataset.name || id;
       track(adding ? 'heart' : 'unheart', {artist: name});
 
       if (adding) localPicks.add(id); else localPicks.delete(id);
       btn.classList.toggle('active', adding);
       btn.setAttribute('aria-pressed', adding);
-      li.classList.toggle('hearted', adding);
+      el.classList.toggle('hearted', adding);
       saveLocal();
 
       await ensureSession();
@@ -573,7 +1361,43 @@ def render_output_html(
           if (adding) localPicks.delete(id); else localPicks.add(id);
           btn.classList.toggle('active', !adding);
           btn.setAttribute('aria-pressed', !adding);
-          li.classList.toggle('hearted', !adding);
+          el.classList.toggle('hearted', !adding);
+          saveLocal();
+        }
+      } catch {}
+    }
+
+    async function toggleSchedule(btn) {
+      if (readOnly) return;
+      const el = btn.closest('[data-artist-id]');
+      const id = el.dataset.artistId;
+      const adding = !localSchedule.has(id);
+      track(adding ? 'schedule-add' : 'schedule-remove');
+
+      if (adding) localSchedule.add(id); else localSchedule.delete(id);
+      btn.classList.toggle('active', adding);
+      btn.setAttribute('aria-pressed', adding);
+      el.classList.toggle('scheduled', adding);
+      saveLocal();
+
+      await ensureSession();
+      if (!sessionId) return;
+
+      try {
+        const method = adding ? 'POST' : 'DELETE';
+        const res = await fetch(API + '/session/' + sessionId + '/schedule/' + id, {method});
+        if (res.status === 404) {
+          sessionId = null; shareToken = null;
+          localStorage.removeItem('stc_session_id');
+          localStorage.removeItem('stc_share_token');
+          await ensureSession();
+          return;
+        }
+        if (!res.ok && res.status !== 204) {
+          if (adding) localSchedule.delete(id); else localSchedule.add(id);
+          btn.classList.toggle('active', !adding);
+          btn.setAttribute('aria-pressed', !adding);
+          el.classList.toggle('scheduled', !adding);
           saveLocal();
         }
       } catch {}
@@ -585,6 +1409,7 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         localPicks = new Set(data.picks);
+        if (data.schedule) localSchedule = new Set(data.schedule);
         readOnly = data.readonly;
         if (!readOnly) {
           sessionId = data.session_id || null;
@@ -596,6 +1421,7 @@ def render_output_html(
         applyHearts();
         if (readOnly) {
           document.querySelectorAll('.heart-btn').forEach(b => b.style.pointerEvents = 'none');
+          document.querySelectorAll('.tt-heart, .tt-photo-heart, .tt-cal').forEach(b => b.style.pointerEvents = 'none');
           filterActive = true;
           document.body.classList.add('filter-active');
           document.getElementById('btn-filter').style.display = 'none';
@@ -620,12 +1446,17 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         const serverPicks = new Set(data.picks);
+        const serverSchedule = new Set(data.schedule || []);
         const syncs = [];
         for (const id of localPicks) {
           if (!serverPicks.has(id)) syncs.push(fetch(API + '/session/' + sessionId + '/pick/' + id, {method: 'POST'}).catch(() => {}));
         }
+        for (const id of localSchedule) {
+          if (!serverSchedule.has(id)) syncs.push(fetch(API + '/session/' + sessionId + '/schedule/' + id, {method: 'POST'}).catch(() => {}));
+        }
         await Promise.all(syncs);
         for (const id of serverPicks) localPicks.add(id);
+        for (const id of serverSchedule) localSchedule.add(id);
         saveLocal();
         applyHearts();
       } catch {}
@@ -651,12 +1482,14 @@ def render_output_html(
           }
           if (data.picks) {
             localPicks = new Set(data.picks);
+            if (data.schedule) localSchedule = new Set(data.schedule);
             saveLocal();
             applyHearts();
             if (data.readonly !== undefined) {
               readOnly = data.readonly;
               if (readOnly) {
                 document.querySelectorAll('.heart-btn').forEach(b => b.style.pointerEvents = 'none');
+                document.querySelectorAll('.tt-heart, .tt-photo-heart, .tt-cal').forEach(b => b.style.pointerEvents = 'none');
                 filterActive = true;
                 document.body.classList.add('filter-active');
                 document.getElementById('btn-filter').style.display = 'none';
@@ -852,6 +1685,7 @@ def render_output_html(
         if (!res.ok) return;
         const data = await res.json();
         localPicks = new Set(data.picks);
+        if (data.schedule) localSchedule = new Set(data.schedule);
         readOnly = data.readonly;
         if (!readOnly) {
           sessionId = data.session_id || null;
@@ -865,6 +1699,486 @@ def render_output_html(
       } catch {}
     }
 
+    // Hamburger menu
+    function toggleMenu() {
+      document.getElementById('cmd-dropdown').classList.toggle('open');
+      document.getElementById('menu-overlay').classList.toggle('open');
+    }
+    function closeMenu() {
+      document.getElementById('cmd-dropdown').classList.remove('open');
+      document.getElementById('menu-overlay').classList.remove('open');
+    }
+    """)
+    parts.append("""
+    // Keep dropdown button states in sync with cmd-bar buttons
+    function syncDropdownState() {
+      const ddList = document.getElementById('dd-list');
+      const btnList = document.getElementById('btn-list');
+      const ddTT = document.getElementById('dd-timetable');
+      const btnTT = document.getElementById('btn-timetable');
+      const ddFilter = document.getElementById('dd-filter');
+      const btnFilter = document.getElementById('btn-filter');
+      const ddSched = document.getElementById('dd-schedule');
+      const btnSched = document.getElementById('btn-schedule');
+      if (ddList && btnList) {
+        ddList.style.display = btnList.classList.contains('active') ? 'none' : '';
+      }
+      if (ddTT && btnTT) {
+        ddTT.style.display = btnTT.classList.contains('active') ? 'none' : '';
+      }
+      if (ddFilter && btnFilter) ddFilter.classList.toggle('active', btnFilter.classList.contains('active'));
+      if (ddSched && btnSched) {
+        ddSched.style.display = btnSched.style.display;
+        ddSched.classList.toggle('active', btnSched.classList.contains('active'));
+      }
+    }
+    """)
+
+    # --- Timetable-specific JS (only when has_timetable) ---
+    if has_timetable:
+        parts.append("""
+    // View toggle
+    function switchView(view, btn) {
+      currentView = view;
+      localStorage.setItem('stc_view', view);
+      const listView = document.getElementById('list-view');
+      const ttView = document.getElementById('timetable-view');
+      const btnList = document.getElementById('btn-list');
+      const btnTT = document.getElementById('btn-timetable');
+      const btnSched = document.getElementById('btn-schedule');
+      const h1 = document.querySelector('h1');
+      if (view === 'timetable') {
+        listView.style.display = 'none';
+        ttView.style.display = '';
+        btnList.classList.remove('active');
+        btnTT.classList.add('active');
+        if (btnSched) btnSched.style.display = '';
+        h1.textContent = h1.textContent.replace('Line-up', 'Timetable');
+        requestAnimationFrame(truncateNames);
+        updateNowLine();
+        _applyMobileFloors();
+        requestAnimationFrame(() => { sizeMobileTable(); alignBgTables(); initTimetableTouch(); });
+        setTimeout(alignBgTables, 200);
+      } else {
+        listView.style.display = '';
+        ttView.style.display = 'none';
+        btnList.classList.add('active');
+        btnTT.classList.remove('active');
+        if (btnSched) btnSched.style.display = 'none';
+        h1.textContent = h1.textContent.replace('Timetable', 'Line-up');
+        scheduleFilterActive = false;
+        document.body.classList.remove('filter-schedule');
+        if (btnSched) btnSched.classList.remove('active');
+      }
+      document.getElementById('view-label').textContent = view === 'timetable' ? 'Timetable' : 'Line-up';
+      window.scrollTo(0, 0);
+      syncDropdownState();
+    }
+
+    function toggleScheduleFilter(btn) {
+      scheduleFilterActive = !scheduleFilterActive;
+      track(scheduleFilterActive ? 'schedule-filter-on' : 'schedule-filter-off');
+      document.body.classList.toggle('filter-schedule', scheduleFilterActive);
+      btn.classList.toggle('active', scheduleFilterActive);
+      syncDropdownState();
+    }
+
+    // --- Mobile floor navigation (declarations) ---
+    let _activeFloors = {};
+    const _isMobileFloor = () => false;
+
+    // Day/period switching
+    let currentDate = TT_DATES[0];
+    let currentPeriod = null;
+
+    function getPeriodsForDate(date) {
+      return TT_SECTIONS.filter(s => s.date === date).map(s => s.period);
+    }
+
+    function showPanel(date, period) {
+      document.querySelectorAll('.timetable-panel').forEach(p => p.classList.remove('active'));
+      const id = 'panel-' + date + '-' + period;
+      const panel = document.getElementById(id);
+      if (panel) panel.classList.add('active');
+      requestAnimationFrame(() => { truncateNames(); sizeMobileTable(); initTimetableTouch(); });
+      updateNowLine();
+      if (_isMobileFloor()) {
+        const idx = _activeFloors[id] || 0;
+        switchFloor(id, idx);
+      }
+    }
+
+    // Sticky fade observers for floor headers (desktop only — mobile uses JS positioning)
+    document.querySelectorAll('.floor-header-bar').forEach(el => {
+      if (window.innerWidth <= 480) return;
+      const top = parseFloat(getComputedStyle(el).top) || 0;
+      if (top === 0) return;
+      const s = document.createElement('div');
+      s.style.cssText = 'height:0;width:0;pointer-events:none;visibility:hidden;position:relative;top:-' + top + 'px';
+      el.parentNode.insertBefore(s, el);
+      new IntersectionObserver(([e]) => {
+        el.classList.toggle('stuck', e.intersectionRatio === 0);
+      }, {threshold: 0}).observe(s);
+    });
+
+    function renderPeriodTabs(date) {
+      const periods = getPeriodsForDate(date);
+      const div = document.getElementById('period-tabs');
+      div.innerHTML = '';
+      if (periods.length <= 1) {
+        currentPeriod = periods[0] || 'day';
+        showPanel(date, currentPeriod);
+        return;
+      }
+      periods.forEach((p, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'period-tab' + (i === 0 ? ' active' : '');
+        btn.textContent = p === 'day' ? 'Day' : 'Night';
+        btn.onclick = function() {
+          div.querySelectorAll('.period-tab').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentPeriod = p;
+          showPanel(date, p);
+        };
+        div.appendChild(btn);
+      });
+      currentPeriod = periods[0];
+      showPanel(date, currentPeriod);
+    }
+
+    function switchDay(date, btn) {
+      currentDate = date;
+      document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderPeriodTabs(date);
+    }
+
+    // Init first day
+    renderPeriodTabs(TT_DATES[0]);
+
+    // Truncate names
+    function truncateNames() {
+      document.querySelectorAll('.tt-name').forEach(el => {
+        if (el.clientWidth === 0) return;
+        const full = el.dataset.full || el.textContent;
+        el.dataset.full = full;
+        el.textContent = full;
+        if (el.scrollWidth > el.clientWidth) {
+          let lo = 0, hi = full.length;
+          while (hi - lo > 1) {
+            const mid = (lo + hi) >> 1;
+            el.textContent = full.slice(0, mid) + '\\u2026';
+            if (el.scrollWidth > el.clientWidth) hi = mid; else lo = mid;
+          }
+          el.textContent = full.slice(0, lo) + '\\u2026';
+        }
+      });
+    }
+    truncateNames();
+    new ResizeObserver(truncateNames).observe(document.body);
+
+    // Artist popup
+    const popup = document.getElementById('tt-popup');
+
+    function _popupLink(href, svg, label) {
+      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + svg + ' ' + (label || '') + '</a>';
+    }
+    """)
+        parts.append(
+            f"    const SVG_IG_JS = `{SVG_IG.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
+        )
+        parts.append(
+            f"    const SVG_SC_JS = `{SVG_SC.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
+        )
+        parts.append(
+            f"    const SVG_SP_JS = `{SVG_SP.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
+        )
+        parts.append(
+            f"    const SVG_LT_JS = `{SVG_LT.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
+        )
+        parts.append(
+            f"    const SVG_YT_JS = `{SVG_YT.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
+        )
+        parts.append("""
+    let _popupJustOpened = false;
+    document.querySelectorAll('.tt-block').forEach(block => {
+      block.addEventListener('click', e => {
+        if (e.target.closest('.tt-heart')) return;
+        if (popup.classList.contains('open')) {
+          closePopup();
+          _popupJustOpened = true;
+          return;
+        }
+        _popupJustOpened = true;
+        const d = block.dataset;
+        const artists = JSON.parse(d.artists || '[]');
+        const px = e.clientX, py = e.clientY;
+        const timetable = block.closest('.timetable');
+        const tr = timetable ? timetable.getBoundingClientRect() : {left:0, right:window.innerWidth, top:0, bottom:window.innerHeight};
+        requestAnimationFrame(() => {
+          document.getElementById('popup-meta').textContent = d.time + ' \\u00b7 ' + d.floor;
+          let artistsHtml = '';
+          artists.forEach(a => {
+            const photo = a.photo
+              ? '<img class="popup-photo" src="' + a.photo + '" alt="' + a.name + '">'
+              : '<div class="popup-photo-placeholder"></div>';
+            let links = '';
+            if (a.ig) links += _popupLink(a.ig, SVG_IG_JS, a.igF);
+            if (a.sc) links += _popupLink(a.sc, SVG_SC_JS, a.scF);
+            if (a.sp) links += _popupLink(a.sp, SVG_SP_JS, a.spL);
+            if (a.lt) links += _popupLink(a.lt, SVG_LT_JS, '');
+            if (a.yt) links += _popupLink(a.yt, SVG_YT_JS, '');
+            artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name">' + a.name + '</div><div class="links">' + links + '</div></div></div>';
+          });
+          document.getElementById('popup-artists').innerHTML = artistsHtml;
+          popup.style.left = '-9999px';
+          popup.style.top = '-9999px';
+          popup.classList.add('open');
+          const pw = popup.offsetWidth;
+          const ph = popup.offsetHeight;
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          let left = px + 12;
+          let top = py + 12;
+          if (left + pw > vw - 8) left = vw - pw - 8;
+          if (left < 8) left = 8;
+          if (top + ph > vh - 8) top = py - ph - 12;
+          if (top < 8) top = 8;
+          popup.style.left = left + 'px';
+          popup.style.top = top + 'px';
+        });
+      });
+    });
+
+    function closePopup() {
+      popup.classList.remove('open');
+    }
+    document.addEventListener('click', e => {
+      if (_popupJustOpened) { _popupJustOpened = false; return; }
+      if (popup.classList.contains('open') && !e.target.closest('.tt-popup')) closePopup();
+    });
+    document.addEventListener('scroll', () => closePopup(), {passive: true});
+    document.querySelectorAll('.tt-v-scroll, .tt-h-scroll').forEach(w => w.addEventListener('scroll', () => closePopup(), {passive: true}));
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !document.querySelector('.modal-overlay.open')) closePopup();
+    });
+
+    // Now line
+    function updateNowLine() {
+      document.querySelectorAll('[data-now-line]').forEach(el => el.style.display = 'none');
+      const panel = document.querySelector('.timetable-panel.active');
+      if (!panel) return;
+      const date = panel.dataset.date;
+      const gridStart = parseInt(panel.dataset.gridStart);
+      const gridEnd = parseInt(panel.dataset.gridEnd);
+      const isNight = panel.dataset.isNight === '1';
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const today = yyyy + '-' + mm + '-' + dd;
+      const yesterday = new Date(now.getTime() - 86400000);
+      const yy = yesterday.getFullYear();
+      const ym = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const yd = String(yesterday.getDate()).padStart(2, '0');
+      const yesterdayStr = yy + '-' + ym + '-' + yd;
+      let nowMin = now.getHours() * 60 + now.getMinutes();
+      let match = false;
+      if (isNight) {
+        if (date === today && nowMin >= gridStart && nowMin < 1440) match = true;
+        if (date === yesterdayStr && nowMin < 12 * 60) { nowMin += 1440; match = true; }
+      } else {
+        if (date === today && nowMin >= gridStart && nowMin <= gridEnd) match = true;
+      }
+      if (!match || nowMin < gridStart || nowMin > gridEnd) return;
+      const row = (nowMin - gridStart) + 2;
+      const line = panel.querySelector('[data-now-line]');
+      if (line) { line.style.display = ''; line.style.gridRow = row + ''; }
+    }
+    setInterval(updateNowLine, 60000);
+
+
+    // --- Mobile floor navigation (logic) ---
+    function switchFloor(panelId, floorIndex) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+      _activeFloors[panelId] = floorIndex;
+      const grid = panel.querySelector('.timetable');
+      const numFloors = parseInt(grid.dataset.numFloors);
+
+      // Update grid-template-columns: 40px then 0px for hidden floors, 1fr for active
+      const cols = ['40px'];
+      for (let i = 0; i < numFloors; i++) {
+        cols.push(i === floorIndex ? '1fr' : '0px');
+      }
+      grid.style.gridTemplateColumns = cols.join(' ');
+
+      // Hide/show blocks
+      grid.querySelectorAll('.tt-block').forEach(block => {
+        const fc = parseInt(block.dataset.floorCol);
+        block.style.display = fc === floorIndex ? '' : 'none';
+      });
+
+      // Hide/show grid lines — keep them visible (they span all columns)
+      // Update floor tab highlight
+      const tabsContainer = document.getElementById('floor-tabs-' + panelId);
+      if (tabsContainer) {
+        tabsContainer.querySelectorAll('.floor-tab').forEach((tab, i) => {
+          tab.classList.toggle('active', i === floorIndex);
+        });
+        // Scroll active tab into view
+        const activeTab = tabsContainer.querySelector('.floor-tab.active');
+        if (activeTab) activeTab.scrollIntoView({behavior: 'smooth', inline: 'center', block: 'nearest'});
+      }
+
+      requestAnimationFrame(truncateNames);
+    }
+
+    function _applyMobileFloors() {}
+
+    // Custom touch-driven scroll with momentum — single axis, syncs header and grid
+    function initTimetableTouch() {
+      document.querySelectorAll('.timetable-panel.active .tt-v-scroll').forEach(vscroll => {
+        if (vscroll._touchInit) return;
+        vscroll._touchInit = true;
+        const hscroll = vscroll.querySelector('.tt-h-scroll');
+        const panel = vscroll.closest('.timetable-panel');
+        const fhb = panel ? panel.querySelector('.mobile-fhb') : null;
+        if (!hscroll) return;
+
+        let startX, startY, startSL, startST, axis, velX, velY, animId;
+        const history = [];
+
+        function clampH(sl) { return Math.max(0, Math.min(sl, hscroll.scrollWidth - hscroll.clientWidth)); }
+        function clampV(st) { return Math.max(0, Math.min(st, vscroll.scrollHeight - vscroll.clientHeight)); }
+
+        function setH(sl) { hscroll.scrollLeft = sl; if (fhb) fhb.scrollLeft = sl; }
+
+        vscroll.addEventListener('touchstart', e => {
+          if (animId) { cancelAnimationFrame(animId); animId = null; }
+          const t = e.touches[0];
+          startX = t.clientX;
+          startY = t.clientY;
+          startSL = hscroll.scrollLeft;
+          startST = vscroll.scrollTop;
+          velX = velY = 0;
+          axis = null;
+          history.length = 0;
+          history.push({x: t.clientX, y: t.clientY, t: Date.now()});
+        }, {passive: false});
+
+        vscroll.addEventListener('touchmove', e => {
+          e.preventDefault();
+          const t = e.touches[0];
+          const dx = startX - t.clientX;
+          const dy = startY - t.clientY;
+
+          if (!axis) {
+            if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+            axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+          }
+
+          const raw = axis === 'x' ? Math.abs(dx) : Math.abs(dy);
+          const ease = Math.min(1, raw / 40);
+          const factor = ease * ease;
+          if (axis === 'x') {
+            setH(clampH(startSL + dx * factor));
+          } else {
+            vscroll.scrollTop = clampV(startST + dy * factor);
+          }
+
+          history.push({x: t.clientX, y: t.clientY, t: Date.now()});
+          if (history.length > 5) history.shift();
+        }, {passive: false});
+
+        vscroll.addEventListener('touchend', () => {
+          if (history.length >= 2) {
+            const first = history[0];
+            const last = history[history.length - 1];
+            const dt = Math.max(1, last.t - first.t);
+            velX = (first.x - last.x) / dt;
+            velY = (first.y - last.y) / dt;
+          }
+          const friction = 0.965;
+          let posX = hscroll.scrollLeft;
+          let posY = vscroll.scrollTop;
+          function coast() {
+            if (axis === 'x') {
+              velX *= friction;
+              if (Math.abs(velX * 24) < 0.5) { setH(Math.round(posX)); return; }
+              posX = clampH(posX + velX * 24);
+              setH(posX);
+            } else {
+              velY *= friction;
+              if (Math.abs(velY * 24) < 0.5) { vscroll.scrollTop = Math.round(posY); return; }
+              posY = clampV(posY + velY * 24);
+              vscroll.scrollTop = posY;
+            }
+            animId = requestAnimationFrame(coast);
+          }
+          coast();
+        }, {passive: true});
+      });
+    }
+
+    function alignBgTables() {
+      document.querySelectorAll('.tt-table tbody').forEach(tbody => {
+        const firstLabel = tbody.querySelector('.tt-time-td[rowspan]');
+        if (!firstLabel) return;
+        const rows = tbody.querySelectorAll('tr');
+        if (rows.length < 2) return;
+        const rowH = rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top;
+        if (rowH <= 0) return;
+        const tbodyTop = tbody.getBoundingClientRect().top;
+        const labelCenter = firstLabel.getBoundingClientRect().top + firstLabel.getBoundingClientRect().height / 2 - tbodyTop;
+        const interval30 = rowH * 6;
+        const interval60 = rowH * 12;
+        tbody.style.backgroundImage =
+          'repeating-linear-gradient(to bottom, #aaa 0, #aaa 1px, transparent 1px, transparent ' + interval60 + 'px),' +
+          'repeating-linear-gradient(to bottom, #ddd 0, #ddd 1px, transparent 1px, transparent ' + interval30 + 'px)';
+        tbody.style.backgroundPosition = '0 ' + labelCenter + 'px';
+      });
+    }
+    function sizeMobileTable() {
+      document.querySelectorAll('.tt-v-scroll').forEach(vscroll => {
+        if (vscroll.offsetHeight === 0) return;
+        const top = vscroll.getBoundingClientRect().top;
+        vscroll.style.height = (window.innerHeight - top) + 'px';
+      });
+    }
+    window.addEventListener('resize', sizeMobileTable);
+
+
+    // Swipe on timetable to switch floors on mobile
+    (function() {
+      let sx = 0, sy = 0;
+      document.querySelectorAll('.timetable').forEach(grid => {
+        grid.addEventListener('touchstart', function(e) {
+          sx = e.touches[0].clientX;
+          sy = e.touches[0].clientY;
+        }, {passive: true});
+        grid.addEventListener('touchend', function(e) {
+          if (!_isMobileFloor()) return;
+          const dx = e.changedTouches[0].clientX - sx;
+          const dy = e.changedTouches[0].clientY - sy;
+          if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+          const panel = grid.closest('.timetable-panel');
+          if (!panel) return;
+          const panelId = panel.id;
+          const numFloors = parseInt(grid.dataset.numFloors);
+          const cur = _activeFloors[panelId] || 0;
+          if (dx < 0 && cur < numFloors - 1) switchFloor(panelId, cur + 1);
+          else if (dx > 0 && cur > 0) switchFloor(panelId, cur - 1);
+        }, {passive: true});
+      });
+    })();
+
+    // Apply mobile floors on resize and initial load
+    window.addEventListener('resize', _applyMobileFloors);
+    _applyMobileFloors();
+    """)
+
+    parts.append("""
     // Init
     (async () => {
       const p = new URLSearchParams(location.search);
@@ -884,6 +2198,7 @@ def render_output_html(
           if (res.ok) {
             const data = await res.json();
             localPicks = new Set(data.picks);
+            if (data.schedule) localSchedule = new Set(data.schedule);
             sessionId = data.session_id;
             shareToken = data.share_token;
             localStorage.setItem('stc_session_id', sessionId);
@@ -894,6 +2209,14 @@ def render_output_html(
         } catch {}
       }
       applyHearts();
+      if (currentView === 'timetable' && document.getElementById('btn-timetable')) {
+        switchView('timetable', document.getElementById('btn-timetable'));
+      }
+      syncDropdownState();
+      setTimeout(syncDropdownState, 100);""")
+    if has_timetable:
+        parts.append("      updateNowLine();")
+    parts.append("""
     })();
     """)
     parts.append("  </script>")

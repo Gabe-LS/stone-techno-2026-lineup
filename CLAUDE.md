@@ -41,8 +41,11 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 | `scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify scrapers |
 | `scraper/db.py` | SQLite schema, upserts, overrides, queries |
 | `scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
-| `scraper/render.py` | HTML generation — includes all CSS, JS, modals, hearts logic |
-| `server/api.py` | FastAPI app — favorites API + WebSocket real-time sync |
+| `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule |
+| `scraper/render_timetable.py` | (Legacy) standalone timetable renderer, no longer used |
+| `scraper/syncscroll.js` | Vendored syncscroll library (not currently used, kept for reference) |
+| `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
+| `server/api.py` | FastAPI app — favorites + schedule API + WebSocket real-time sync |
 
 ### Two deploy paths
 
@@ -57,12 +60,24 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 
 These are regenerable. The source of truth is the live website + `overrides.toml`.
 
+## Timetable View
+
+The page includes both a line-up list and a timetable grid, toggled via the command bar. The timetable appears automatically when artists have `start_time`/`end_time` data in `artist_sections`.
+
+- **Desktop**: CSS grid with sticky floor headers and time labels
+- **Mobile**: HTML `<table>` with sticky `<th>` headers and `<td>` time labels; two nested scroll divs (vertical outer, horizontal inner) with custom JS touch handler to prevent diagonal scrolling; floor header bar synced via `scrollLeft`
+- **B2B sets**: Multiple artists in the same time slot render as one card with per-artist hearts
+- **Schedule**: Calendar icon on each card, server-synced via `/api/session/{code}/schedule/{slot_id}`
+- **Fake data**: `python seed_timetable.py` populates floors and time slots for development
+
+Floor order is defined in `canonical_floor_order` in `render.py` (alphabetical).
+
 ## Working on the HTML/CSS/JS
 
 All frontend code lives in `scraper/render.py` as Python string concatenation. There is no separate HTML/CSS/JS file to edit. After changes, regenerate with `--render-only --no-photos` and open `output/lineup.html`.
 
 ## Server
 
-The FastAPI server (`server/api.py`) serves static files and provides the favorites API. Sessions are identified by 128-bit URL-safe tokens (`secrets.token_urlsafe(16)`): `session_id` for read-write, `share_token` for read-only. Cross-device sync uses ephemeral 6-digit PINs (5-min TTL, single-use, one active per session). Picks are stored as JSON arrays in SQLite with atomic add/remove via `json_each`/`json_group_array`. Real-time sync uses WebSocket at `/ws/{code}`.
+The FastAPI server (`server/api.py`) serves static files and provides the favorites + schedule API. Sessions are identified by 128-bit URL-safe tokens (`secrets.token_urlsafe(16)`): `session_id` for read-write, `share_token` for read-only. Cross-device sync uses ephemeral 6-digit PINs (5-min TTL, single-use, one active per session). Picks and schedule are stored as JSON arrays in SQLite with atomic add/remove via `json_each`/`json_group_array`. Real-time sync uses WebSocket at `/ws/{code}`. Schedule endpoints mirror picks: `POST/DELETE /api/session/{code}/schedule/{slot_id}`.
 
 Production: Docker container on a DigitalOcean VPS behind Caddy (auto-TLS). Database at `server/data/hearts.db` is volume-mounted for persistence.
