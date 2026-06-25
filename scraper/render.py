@@ -170,7 +170,7 @@ def render_output_html(
         f'  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{favicon_b64}">'
     )
     parts.append('  <link rel="manifest" href="/manifest.json">')
-    parts.append('  <meta name="apple-mobile-web-app-capable" content="yes">')
+    parts.append('  <meta name="mobile-web-app-capable" content="yes">')
     parts.append(
         '  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
     )
