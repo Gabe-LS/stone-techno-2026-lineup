@@ -1837,7 +1837,10 @@ def render_output_html(
         if (!vapidRes.ok) return;
         const { public_key } = await vapidRes.json();
         const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlBase64ToUint8Array(public_key) });
+        const keyBytes = _urlBase64ToUint8Array(public_key);
+        var oldSub = await reg.pushManager.getSubscription();
+        if (oldSub) await oldSub.unsubscribe();
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
         await ensureSession();
         if (!sessionId) return;
         await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
