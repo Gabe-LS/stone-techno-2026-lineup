@@ -83,29 +83,44 @@ def _artists_json(group: list[dict], photos_prefix: str) -> str:
     )
 
 
-def _format_other_slots(
+def _slot_time_str(slot: dict) -> str:
+    s = slot.get("start_time") or ""
+    e = slot.get("end_time") or ""
+    if s and e:
+        sh = s.split("T")[1] if "T" in s else s
+        eh = e.split("T")[1] if "T" in e else e
+        return f"{sh}–{eh}"
+    return ""
+
+
+def _format_artist_schedule(
     all_slots: list[dict], current_date: str, current_period: str
 ) -> str | None:
-    others = []
+    current_label = None
+    other_labels = []
     for slot in all_slots:
-        if slot["date"] == current_date and slot["period"] == current_period:
-            continue
-        same_day = slot["date"] == current_date
-        slot_name = (
-            "daytime (12:00–23:59)"
-            if slot["period"] == "day"
-            else "nighttime (23:00–07:00)"
-        )
-        if same_day:
-            label = slot_name
+        floor = slot.get("location_name") or ""
+        time = _slot_time_str(slot)
+        is_current = slot["date"] == current_date and slot["period"] == current_period
+        if is_current:
+            parts = [p for p in (floor, time) if p]
+            current_label = " · ".join(parts) if parts else None
         else:
-            label = f"{_format_short_date(slot['date'])} {slot_name}"
-        if slot.get("location_name"):
-            label += f" @ {slot['location_name']}"
-        others.append(label)
-    if not others:
-        return None
-    return "Also playing " + " · ".join(others)
+            same_day = slot["date"] == current_date
+            if same_day:
+                parts = [p for p in (floor, time) if p]
+            else:
+                parts = [
+                    p for p in (_format_short_date(slot["date"]), floor, time) if p
+                ]
+            if parts:
+                other_labels.append(" ".join(parts))
+    result = []
+    if current_label:
+        result.append(current_label)
+    if other_labels:
+        result.append("Also @ " + " · ".join(other_labels))
+    return " · ".join(result) if result else None
 
 
 def render_output_html(
@@ -633,7 +648,7 @@ def render_output_html(
         ig_f = format_followers(a.get("ig_followers"))
         sc_f = format_followers(a.get("sc_followers"))
         sp_l = format_followers(a.get("spotify_listeners"))
-        schedule = _format_other_slots(a.get("all_slots", []), cur_date, cur_period)
+        schedule = _format_artist_schedule(a.get("all_slots", []), cur_date, cur_period)
 
         card_key = f"{a.get('overlay_id', '')}:{cur_date}:{cur_period}:{loc_id or ''}"
         artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))

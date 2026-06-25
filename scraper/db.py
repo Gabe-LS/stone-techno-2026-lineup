@@ -231,8 +231,9 @@ def load_locations_from_db(db: sqlite3.Connection) -> dict[str, dict]:
 
 def _load_artist_all_slots(db: sqlite3.Connection) -> dict[str, list[dict]]:
     slots: dict[str, list[dict]] = {}
-    for oid, date, period, loc_id, loc_name in db.execute(
-        "SELECT sa.overlay_id, s.date, s.period, sa.location_id, l.name "
+    for oid, date, period, loc_id, loc_name, start_time, end_time in db.execute(
+        "SELECT sa.overlay_id, s.date, s.period, sa.location_id, l.name, "
+        "sa.start_time, sa.end_time "
         "FROM artist_sections sa "
         "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
         "LEFT JOIN locations l ON l.location_id = sa.location_id "
@@ -244,6 +245,8 @@ def _load_artist_all_slots(db: sqlite3.Connection) -> dict[str, list[dict]]:
                 "period": period,
                 "location_id": loc_id,
                 "location_name": loc_name,
+                "start_time": start_time,
+                "end_time": end_time,
             }
         )
     return slots
