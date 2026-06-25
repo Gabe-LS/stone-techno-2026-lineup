@@ -669,6 +669,25 @@ def render_output_html(
     parts.append("    </div>")
     parts.append("  </div>")
 
+    # Brave push instructions modal
+    parts.append(
+        '  <div class="modal-overlay" id="m-brave" role="dialog" aria-modal="true" aria-labelledby="m-brave-title">'
+    )
+    parts.append('    <div class="modal-box">')
+    parts.append('      <h3 id="m-brave-title">Enable Notifications in Brave</h3>')
+    parts.append(
+        '      <p class="sub" style="color:inherit">Brave blocks push notifications by default because they route through Google\'s servers.</p>'
+    )
+    parts.append('      <div class="steps">')
+    parts.append("        <p>Open <strong>brave://settings/privacy</strong></p>")
+    parts.append(
+        "        <p>Enable <strong>Use Google services for push messaging</strong></p>"
+    )
+    parts.append("        <p>Come back and tap the notification bell again</p>")
+    parts.append("      </div>")
+    parts.append("    </div>")
+    parts.append("  </div>")
+
     def _link(href: str, svg: str, label: str = "") -> str:
         txt = f"{svg} {esc(label)}" if label else svg
         return f'<a href="{esc(href)}" target="_blank" rel="noopener noreferrer" title="{esc(label)}">{txt}</a>'
@@ -1846,7 +1865,10 @@ def render_output_html(
         await fetch(API + '/session/' + sessionId + '/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub.toJSON()) });
         localStorage.setItem('stc_push', '1');
         track('push-enable');
-      } catch (e) { console.warn('Push subscribe failed', e); }
+      } catch (e) {
+        if (navigator.brave && e.name === 'AbortError') { openDialog('m-brave'); return; }
+        console.warn('Push subscribe failed', e);
+      }
       updateBellState();
     }
 
