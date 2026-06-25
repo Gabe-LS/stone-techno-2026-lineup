@@ -262,7 +262,7 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
         "FROM artist_sections sa "
         "JOIN artists a ON a.overlay_id = sa.overlay_id "
         "JOIN sections s ON s.timestamp_key = sa.timestamp_key "
-        "ORDER BY s.position, a.name"
+        "ORDER BY s.position, sa.start_time, a.name"
     ):
         assignments.setdefault(row[10], []).append(
             {
