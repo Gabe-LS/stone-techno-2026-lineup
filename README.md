@@ -44,7 +44,7 @@ stone-techno-companion/
 ├── output/                      # Generated (gitignored)
 │   ├── lineup.html              # The final page (~2800 lines)
 │   └── photos/*.avif            # Processed artist photos (~100 files)
-├── seed_timetable.py            # Seeds fake timetable data for development
+├── seed_timetable.py            # Seeds fake timetable data (5 day + 2 night floors)
 └── lineup.db                    # SQLite cache (gitignored)
 ```
 
@@ -165,10 +165,10 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 |---|---|---|
 | `POST` | `/api/session` | Create a new session (returns session_id + share_token) |
 | `GET` | `/api/session/{code}` | Load picks (works with session_id or share_token) |
-| `POST` | `/api/session/{code}/pick/{artist_id}` | Add a pick |
-| `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove a pick |
-| `POST` | `/api/session/{code}/schedule/{slot_id}` | Add a slot to schedule |
-| `DELETE` | `/api/session/{code}/schedule/{slot_id}` | Remove a slot from schedule |
+| `POST` | `/api/session/{code}/pick/{artist_id}` | Add an artist pick |
+| `DELETE` | `/api/session/{code}/pick/{artist_id}` | Remove an artist pick |
+| `POST` | `/api/session/{code}/schedule/{slot_id}` | Add a slot to personal schedule |
+| `DELETE` | `/api/session/{code}/schedule/{slot_id}` | Remove a slot from personal schedule |
 | `POST` | `/api/session/{code}/sync-pin` | Generate a 6-digit sync PIN (5-min TTL, single-use) |
 | `POST` | `/api/sync/{pin}` | Exchange a sync PIN for session credentials |
 | `WS` | `/ws/{code}` | WebSocket for real-time sync |
@@ -181,6 +181,7 @@ Pick operations are atomic — they use `json_group_array` with `json_each` and 
 |---|---|
 | Session creation | 10 per hour per IP |
 | Pick add/remove | 600 per hour per IP |
+| Schedule add/remove | 600 per hour per IP |
 | Session load | 600 per hour per IP |
 
 ### Offline Resilience
@@ -290,10 +291,13 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
 - Sticky section headers (date, period, location) with gradient fade effect using IntersectionObserver
 - Artist cards with photo, name, schedule annotation, social links + follower counts
 - Lazy-loaded AVIF photos
-- **Timetable view** with CSS grid (desktop) and HTML table (mobile)
+- **Timetable view** with CSS grid (desktop) and HTML table with sticky headers (mobile)
 - Per-artist hearts on photo thumbnails, calendar icon for personal schedule
 - B2B sets render as multi-artist cards
-- Mobile: hamburger menu, custom touch scroll with momentum and axis locking
+- "Add to calendar" ICS export on each card (timezone, 10-min alarm, floor as location)
+- Mobile: hamburger menu, custom touch scroll with momentum and single-axis locking
+- CSS variables for colors and font scale, WCAG 2.1 AA compliant contrast ratios
+- 7 floor colors (rainbow pastels, evenly spaced, colorblind-aware)
 - Command bar: Line-up | Timetable | Show My Picks | Show My Schedule | Share | Sync
 - Share modal with readonly URL input and copy-to-clipboard
 - Sync modal with QR code, 6-digit PIN, live countdown timer, and success confirmation via WebSocket

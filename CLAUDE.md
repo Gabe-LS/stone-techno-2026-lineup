@@ -55,7 +55,7 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 ## Generated Artifacts (gitignored)
 
 - `lineup.db` — SQLite cache of artists, sections, follower counts
-- `output/lineup.html` — generated page (~2800 lines)
+- `output/lineup.html` — generated page (~6000+ lines with timetable)
 - `output/photos/*.avif` — processed artist photos (~100 files)
 
 These are regenerable. The source of truth is the live website + `overrides.toml`.
@@ -65,12 +65,21 @@ These are regenerable. The source of truth is the live website + `overrides.toml
 The page includes both a line-up list and a timetable grid, toggled via the command bar. The timetable appears automatically when artists have `start_time`/`end_time` data in `artist_sections`.
 
 - **Desktop**: CSS grid with sticky floor headers and time labels
-- **Mobile**: HTML `<table>` with sticky `<th>` headers and `<td>` time labels; two nested scroll divs (vertical outer, horizontal inner) with custom JS touch handler to prevent diagonal scrolling; floor header bar synced via `scrollLeft`
+- **Mobile**: HTML `<table>` with sticky `<th>`/`<td>` (no diagonal scroll); two nested divs (`tt-v-scroll` + `tt-h-scroll`) with custom JS touch handler (axis locking, momentum with friction 0.965, ease-in acceleration); floor header bar synced via `scrollLeft`
 - **B2B sets**: Multiple artists in the same time slot render as one card with per-artist hearts
 - **Schedule**: Calendar icon on each card, server-synced via `/api/session/{code}/schedule/{slot_id}`
-- **Fake data**: `python seed_timetable.py` populates floors and time slots for development
+- **ICS export**: "Add to calendar" link on each card — generates .ics with timezone (Europe/Berlin), 10-min alarm, floor as location
+- **Fake data**: `python seed_timetable.py` populates 5 day floors + 2 night floors (Grand Hall, Mischanlage) with time slots
+- **Hamburger menu**: mobile-only, shows/hides based on current view, preserves view in localStorage across reloads
 
-Floor order is defined in `canonical_floor_order` in `render.py` (alphabetical).
+### Design system
+
+- **Colors**: CSS variables in `:root` — `--color-text`, `--color-muted` (#717171, 4.88:1 AA), `--color-muted-icon` (#888, 3.54:1), `--color-accent`, `--color-schedule`, `--color-line-hour`, `--color-line-half`
+- **Floor colors**: 7 pastel colors (`--floor-*`) evenly spaced around the hue wheel (s=0.21), min pair distance 31, rainbow sequence in alphabetical order. Cards use `color-mix()` for 88% opacity
+- **Font scale**: 6 steps via variables — `--font-2xl` (2em) through `--font-xs` (0.75em/12px minimum). No text below 12px for accessibility
+- **Contrast**: all text/icon colors pass WCAG 2.1 AA
+
+Floor order is defined in `canonical_floor_order` in `render.py` (alphabetical, 7 floors).
 
 ## Working on the HTML/CSS/JS
 
