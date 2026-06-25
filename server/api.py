@@ -328,16 +328,37 @@ async def _push_notification_scheduler() -> None:
 
                     slot = slot_map[slot_id]
                     artists = " b2b ".join(slot["artists"])
-                    payload = json.dumps(
+                    title = f"{artists} starts in 10 min"
+                    body = f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}"
+                    navigate_url = "/?view=timetable"
+
+                    payload_standard = json.dumps(
                         {
-                            "title": f"\U0001f3b5 {artists} starts in 10 min",
-                            "body": f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}",
+                            "title": title,
+                            "body": body,
                             "tag": f"stc-{slot_id}",
-                            "url": "/?view=timetable",
+                            "url": navigate_url,
+                        }
+                    )
+                    payload_declarative = json.dumps(
+                        {
+                            "web_push": "8030",
+                            "notification": {
+                                "title": title,
+                                "body": body,
+                                "navigate": navigate_url,
+                            },
                         }
                     )
 
+                    vapid_claims = {
+                        "sub": os.environ.get(
+                            "VAPID_SUBJECT", "mailto:noreply@example.com"
+                        )
+                    }
                     for endpoint, p256dh, auth in subs:
+                        is_apple = "push.apple.com" in endpoint
+                        payload = payload_declarative if is_apple else payload_standard
                         try:
                             webpush(
                                 subscription_info={
@@ -346,11 +367,7 @@ async def _push_notification_scheduler() -> None:
                                 },
                                 data=payload,
                                 vapid_private_key=os.environ["VAPID_PRIVATE_KEY"],
-                                vapid_claims={
-                                    "sub": os.environ.get(
-                                        "VAPID_SUBJECT", "mailto:noreply@example.com"
-                                    )
-                                },
+                                vapid_claims=vapid_claims,
                             )
                         except WebPushException as e:
                             if e.response and e.response.status_code in (404, 410):

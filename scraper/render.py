@@ -529,7 +529,7 @@ def render_output_html(
     parts.append(
         '      <button onmousedown="this.blur()" onclick="toggleNotifications()" id="btn-bell" '
         'style="display:none" aria-label="Notifications">'
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<svg width="13" height="13" style="position:relative;top:2px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>'
     )
     parts.append("    </div>")
@@ -557,7 +557,7 @@ def render_output_html(
     parts.append('    <button onclick="openShareModal(); closeMenu()">Share</button>')
     parts.append('    <button onclick="openSyncModal(); closeMenu()">Sync</button>')
     parts.append(
-        '    <button onclick="toggleNotifications(); closeMenu()" id="dd-bell" style="display:none">Notifications</button>'
+        '    <button onclick="toggleNotifications(); closeMenu()" id="dd-bell">Notifications</button>'
     )
     parts.append("  </div>")
     parts.append(
@@ -654,7 +654,14 @@ def render_output_html(
     parts.append('    <div class="modal-box">')
     parts.append('      <h3 id="m-ios-title">Enable Notifications</h3>')
     parts.append(
-        '      <p class="sub" style="color:inherit">On iOS, notifications require the app to be added to your home screen.</p>'
+        '      <p class="sub" style="color:inherit">On iOS, notifications require Safari and adding the app to your home screen.</p>'
+    )
+    parts.append(
+        '      <button type="button" class="btn" style="margin:0 0 14px;width:100%" '
+        "onclick=\"navigator.clipboard.writeText(location.origin).then(function(){this.textContent='Copied!';var b=this;setTimeout(function(){b.textContent='Copy link to open in Safari'},1500)}.bind(this))\">Copy link to open in Safari</button>"
+    )
+    parts.append(
+        '      <p class="sub" style="color:inherit;margin:0 0 10px">Then in Safari:</p>'
     )
     parts.append('      <div class="steps">')
     parts.append(
@@ -662,9 +669,9 @@ def render_output_html(
         '<svg style="display:inline;vertical-align:middle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></p>'
     )
-    parts.append("        <p>Scroll down, tap <strong>Add to Home Screen</strong></p>")
+    parts.append("        <p>Tap <strong>Add to Home Screen</strong></p>")
     parts.append("        <p>Open the app from your home screen</p>")
-    parts.append("        <p>Tap the notification bell again</p>")
+    parts.append("        <p>Enable notifications</p>")
     parts.append("      </div>")
     parts.append("    </div>")
     parts.append("  </div>")
@@ -1272,7 +1279,9 @@ def render_output_html(
         parts.append("""
     // Immediate view restore before anything renders
     (function() {
-      var v = localStorage.getItem('stc_view');
+      var vp = new URLSearchParams(location.search).get('view');
+      if (vp) history.replaceState(null, '', location.pathname);
+      var v = vp || localStorage.getItem('stc_view');
       if (v === 'timetable') {
         var lv = document.getElementById('list-view');
         var tv = document.getElementById('timetable-view');
@@ -1843,12 +1852,12 @@ def render_output_html(
       const dd = document.getElementById('dd-bell');
       const on = localStorage.getItem('stc_push') === '1';
       if (btn) { btn.style.display = _supportsPush ? '' : 'none'; btn.classList.toggle('active', on); }
-      if (dd) { dd.style.display = _supportsPush ? '' : 'none'; dd.classList.toggle('active', on); dd.textContent = on ? 'Notifications ✓' : 'Notifications'; }
+      if (dd) { dd.style.display = (_supportsPush || _isIOS) ? '' : 'none'; dd.textContent = on ? 'Disable notifications' : 'Enable notifications'; }
     }
 
     async function enableNotifications() {
-      if (!_supportsPush) return;
       if (_isIOS && !_isStandalone) { openDialog('m-ios'); return; }
+      if (!_supportsPush) return;
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') return;
       try {
@@ -2488,6 +2497,8 @@ def render_output_html(
         } catch {}
       }
       applyHearts();
+      var viewParam = p.get('view');
+      if (viewParam) { history.replaceState(null, '', location.pathname); currentView = viewParam; }
       if (currentView === 'timetable' && document.getElementById('btn-timetable')) {
         switchView('timetable', document.getElementById('btn-timetable'));
       }

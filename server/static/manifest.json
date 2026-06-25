@@ -1,6 +1,6 @@
 {
   "name": "Stone Techno Companion",
-  "short_name": "Stone Techno",
+  "short_name": "Stone Techno Companion",
   "description": "Festival lineup companion with picks, schedule, and notifications",
   "start_url": "/",
   "display": "standalone",
