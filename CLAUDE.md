@@ -43,7 +43,6 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 | `scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
 | `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications |
 | `scraper/timetable_json.py` | Generates `timetable.json` mapping schedule slot UUIDs to set times (used by push notification scheduler) |
-| `scraper/render_timetable.py` | (Legacy) standalone timetable renderer, no longer used |
 | `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
 | `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push notification scheduler |
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |

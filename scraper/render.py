@@ -406,9 +406,6 @@ def render_output_html(
     .cmd-dropdown { display: none; }
     .menu-overlay { display: none; }
 
-    /* Floor tabs (mobile timetable floor navigation) */
-    .floor-tabs-wrap { display: none; }
-
     @media (max-width: 480px) {
       body { padding: 0 12px; }
       h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; }
@@ -440,7 +437,6 @@ def render_output_html(
       .tt-photo, .tt-photo-placeholder { width: 30px; height: 30px; border-radius: 4px; }
 
       /* Hide CSS grid timetable on mobile — replaced by table */
-      .floor-tabs-wrap { display: none !important; }
       .floor-header-bar { display: none !important; }
       .tt-time-col { display: none !important; }
       .tt-floor-pill { display: none !important; }
@@ -945,22 +941,6 @@ def render_output_html(
                 f'data-grid-start="{grid_start}" data-grid-end="{grid_end}" '
                 f'data-is-night="{1 if is_night else 0}" id="{esc(panel_id)}">'
             )
-
-            # Floor tabs (not used on current mobile, kept for compatibility)
-            parts.append('    <div class="floor-tabs-wrap">')
-            parts.append(
-                f'    <div class="floor-tabs" id="floor-tabs-{esc(panel_id)}">'
-            )
-            for fi, fid in enumerate(floor_ids):
-                loc_name = locations.get(fid, {}).get("name", fid)
-                active_cls = " active" if fi == 0 else ""
-                parts.append(
-                    f'      <button class="floor-tab floor-{esc(fid)}{active_cls}" '
-                    f"onclick=\"switchFloor('{esc(panel_id)}', {fi})\">"
-                    f"{esc(loc_name)}</button>"
-                )
-            parts.append("    </div>")
-            parts.append("    </div>")
 
             # Scroll-wrap (kept for structure; tt-time-col hidden on mobile via CSS)
             parts.append('    <div class="tt-scroll-wrap" style="position: relative;">')
@@ -1984,7 +1964,6 @@ def render_output_html(
         h1.textContent = h1.textContent.replace('Line-up', 'Timetable');
         requestAnimationFrame(truncateNames);
         updateNowLine();
-        _applyMobileFloors();
         requestAnimationFrame(() => { sizeMobileTable(); alignBgTables(); initTimetableTouch(); });
         setTimeout(alignBgTables, 200);
       } else {
@@ -2010,10 +1989,6 @@ def render_output_html(
       btn.classList.toggle('active', scheduleFilterActive);
       syncDropdownState();
     }
-
-    // --- Mobile floor navigation (declarations) ---
-    let _activeFloors = {};
-    const _isMobileFloor = () => false;
 
     // Day/period switching
     let currentDate = TT_DATES[0];
@@ -2044,10 +2019,6 @@ def render_output_html(
         if (fhb && fhb.classList.contains('mobile-fhb')) fhb.scrollLeft = 0;
       });
       updateNowLine();
-      if (_isMobileFloor()) {
-        const idx = _activeFloors[id] || 0;
-        switchFloor(id, idx);
-      }
     }
 
     // Sticky fade observers for floor headers (desktop only — mobile uses JS positioning)
@@ -2312,43 +2283,6 @@ def render_output_html(
     setInterval(updateNowLine, 60000);
 
 
-    // --- Mobile floor navigation (logic) ---
-    function switchFloor(panelId, floorIndex) {
-      const panel = document.getElementById(panelId);
-      if (!panel) return;
-      _activeFloors[panelId] = floorIndex;
-      const grid = panel.querySelector('.timetable');
-      const numFloors = parseInt(grid.dataset.numFloors);
-
-      // Update grid-template-columns: 40px then 0px for hidden floors, 1fr for active
-      const cols = ['40px'];
-      for (let i = 0; i < numFloors; i++) {
-        cols.push(i === floorIndex ? '1fr' : '0px');
-      }
-      grid.style.gridTemplateColumns = cols.join(' ');
-
-      // Hide/show blocks
-      grid.querySelectorAll('.tt-block').forEach(block => {
-        const fc = parseInt(block.dataset.floorCol);
-        block.style.display = fc === floorIndex ? '' : 'none';
-      });
-
-      // Hide/show grid lines — keep them visible (they span all columns)
-      // Update floor tab highlight
-      const tabsContainer = document.getElementById('floor-tabs-' + panelId);
-      if (tabsContainer) {
-        tabsContainer.querySelectorAll('.floor-tab').forEach((tab, i) => {
-          tab.classList.toggle('active', i === floorIndex);
-        });
-        // Scroll active tab into view
-        const activeTab = tabsContainer.querySelector('.floor-tab.active');
-        if (activeTab) activeTab.scrollIntoView({behavior: 'smooth', inline: 'center', block: 'nearest'});
-      }
-
-      requestAnimationFrame(truncateNames);
-    }
-
-    function _applyMobileFloors() {}
 
     // Custom touch-driven scroll with momentum — single axis, syncs header and grid
     function initTimetableTouch() {
@@ -2469,33 +2403,6 @@ def render_output_html(
     window.addEventListener('resize', sizeMobileTable);
 
 
-    // Swipe on timetable to switch floors on mobile
-    (function() {
-      let sx = 0, sy = 0;
-      document.querySelectorAll('.timetable').forEach(grid => {
-        grid.addEventListener('touchstart', function(e) {
-          sx = e.touches[0].clientX;
-          sy = e.touches[0].clientY;
-        }, {passive: true});
-        grid.addEventListener('touchend', function(e) {
-          if (!_isMobileFloor()) return;
-          const dx = e.changedTouches[0].clientX - sx;
-          const dy = e.changedTouches[0].clientY - sy;
-          if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
-          const panel = grid.closest('.timetable-panel');
-          if (!panel) return;
-          const panelId = panel.id;
-          const numFloors = parseInt(grid.dataset.numFloors);
-          const cur = _activeFloors[panelId] || 0;
-          if (dx < 0 && cur < numFloors - 1) switchFloor(panelId, cur + 1);
-          else if (dx > 0 && cur > 0) switchFloor(panelId, cur - 1);
-        }, {passive: true});
-      });
-    })();
-
-    // Apply mobile floors on resize and initial load
-    window.addEventListener('resize', _applyMobileFloors);
-    _applyMobileFloors();
     """)
 
     parts.append("""

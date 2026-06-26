@@ -23,7 +23,6 @@ stone-techno-companion/
 │   ├── images.py                # Photo download, resize (pyvips), AVIF encoding
 │   ├── render.py                # HTML generation — line-up list + timetable grid
 │   ├── timetable_json.py        # Generates timetable.json for push notification scheduler
-│   ├── render_timetable.py      # (Legacy) standalone timetable renderer
 │   ├── overrides.toml           # Manual corrections for wrong/missing links
 │   ├── qrcode.min.js            # QR code generator (bundled into HTML)
 │   └── icons/                   # SVG icons for Instagram, SoundCloud, Spotify,
