@@ -138,7 +138,7 @@ def render_output_html(
         '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
     )
     parts.append(f"  <title>{esc(title)}</title>")
-    description = "Explore the Stone Techno 2026 line-up: artist profiles, social links, follower counts. Save your picks and share them with friends."
+    description = "Your companion for Stone Techno 2026. Browse the lineup, explore the timetable, plan your schedule, and get notified before your sets start."
     parts.append(f'  <meta name="description" content="{esc(description)}">')
     parts.append(f'  <meta property="og:title" content="{esc(title)}">')
     parts.append(f'  <meta property="og:description" content="{esc(description)}">')

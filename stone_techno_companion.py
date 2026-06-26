@@ -83,7 +83,7 @@ def main() -> None:
     )
     parser.add_argument("--url", default=STONE_TECHNO_URL)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    parser.add_argument("--title", default="Stone Techno 2026 Line-up")
+    parser.add_argument("--title", default="Stone Techno Companion")
     parser.add_argument(
         "--no-followers", action="store_true", help="Skip fetching follower counts"
     )
