@@ -21,17 +21,19 @@ self.addEventListener('notificationclick', function (event) {
   var fullUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
-    self.clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then(function (list) {
-        for (var i = 0; i < list.length; i++) {
-          if ('navigate' in list[i]) {
-            return list[i].navigate(fullUrl).then(function (c) {
-              return c.focus();
-            });
-          }
+    caches.open('stc-push').then(function (cache) {
+      return cache.put('/_push_navigate', new Response(targetUrl));
+    }).then(function () {
+      return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    }).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        if ('navigate' in list[i]) {
+          return list[i].navigate(fullUrl).then(function (c) {
+            return c.focus();
+          });
         }
-        return self.clients.openWindow(fullUrl);
-      }),
+      }
+      return self.clients.openWindow(fullUrl);
+    }),
   );
 });

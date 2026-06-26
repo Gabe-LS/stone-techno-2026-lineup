@@ -2499,6 +2499,18 @@ def render_output_html(
       applyHearts();
       var viewParam = p.get('view');
       if (viewParam) { history.replaceState(null, '', location.pathname); currentView = viewParam; }
+      // Check for push notification navigate flag (iOS workaround)
+      if ('caches' in window) {
+        try {
+          var pushCache = await caches.open('stc-push');
+          var navResp = await pushCache.match('/_push_navigate');
+          if (navResp) {
+            var navUrl = await navResp.text();
+            await pushCache.delete('/_push_navigate');
+            if (navUrl.includes('timetable')) currentView = 'timetable';
+          }
+        } catch {}
+      }
       if (currentView === 'timetable' && document.getElementById('btn-timetable')) {
         switchView('timetable', document.getElementById('btn-timetable'));
       }
