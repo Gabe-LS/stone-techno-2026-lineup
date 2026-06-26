@@ -9,7 +9,7 @@ A scraper, enrichment pipeline, and static site generator for the [Stone Techno]
 1. **Scrapes** the official Stone Techno lineup page using Playwright (headless Chromium)
 2. **Enriches** each artist by visiting their SoundCloud, Instagram, and Spotify profiles to collect follower/listener counts and discover missing social links
 3. **Processes photos** — downloads, resizes to 240x240 with adaptive sharpening, and encodes to AVIF using binary search to hit a target ssimulacra2 quality score of 78
-4. **Generates** a single self-contained HTML file with inline CSS, JS, and SVG icons
+4. **Generates** a single self-contained HTML file (~580KB) with inline CSS, JS, and SVG sprite
 5. **Serves** the page via a FastAPI backend with a favorites API, WebSocket-based real-time sync, and push notifications
 
 ## Project Structure
@@ -21,12 +21,12 @@ stone-techno-companion/
 │   ├── scrape.py                # Lineup page parser + SC/IG/Spotify scrapers
 │   ├── db.py                    # SQLite schema, upserts, queries, overrides
 │   ├── images.py                # Photo download, resize (pyvips), AVIF encoding
-│   ├── render.py                # HTML generation — line-up list + timetable grid
-│   ├── timetable_json.py        # Generates timetable.json for push notification scheduler
+│   ├── render.py                # HTML generation — line-up list + timetable grid, SVG sprite
+│   ├── timetable_json.py        # Generates timetable.json for push scheduler + ICS endpoint
 │   ├── overrides.toml           # Manual corrections for wrong/missing links
 │   ├── qrcode.min.js            # QR code generator (bundled into HTML)
 │   └── icons/                   # SVG icons for Instagram, SoundCloud, Spotify,
-│       ├── instagram-square-round.svg      Linktree, YouTube — inlined into HTML
+│       ├── instagram-square-round.svg      Linktree, YouTube — deduplicated via SVG sprite
 │       ├── soundcloud-square-round.svg
 │       ├── spotify-square-round.svg
 │       ├── linktree-square-round.svg
@@ -34,7 +34,7 @@ stone-techno-companion/
 │       ├── favicon.svg              # Favicon (calendar + music note)
 │       └── favicon.png              # PNG version for OG image previews
 ├── server/
-│   ├── api.py                   # FastAPI app — favorites + schedule + push notifications
+│   ├── api.py                   # FastAPI app — favorites + schedule + push + ICS export
 │   ├── static/
 │   │   ├── sw.js                # Service worker for push notifications
 │   │   └── manifest.json        # PWA manifest
@@ -45,7 +45,7 @@ stone-techno-companion/
 ├── .github/workflows/
 │   └── deploy.yml               # Auto-deploy server to VPS on push to main
 ├── output/                      # Generated (gitignored)
-│   ├── lineup.html              # The final page (~6000+ lines)
+│   ├── lineup.html              # The final page (~580KB)
 │   ├── timetable.json           # Slot UUID → set time mapping for push scheduler
 │   └── photos/*.avif            # Processed artist photos (~100 files)
 ├── seed_timetable.py            # Seeds fake timetable data (5 day + 2 night floors)
@@ -179,6 +179,7 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 | `POST` | `/api/session/{code}/push/subscribe` | Store a push subscription |
 | `DELETE` | `/api/session/{code}/push/subscribe` | Remove a push subscription |
 | `GET` | `/api/session/{code}/push/status` | Check if push subscriptions exist |
+| `GET` | `/ics/{slot_id}` | Download .ics calendar file for a timetable slot |
 | `WS` | `/ws/{code}` | WebSocket for real-time sync |
 
 Pick operations are atomic — they use `json_group_array` with `json_each` and `UNION`/`WHERE` to avoid read-modify-write races.
@@ -302,16 +303,19 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
 
 ## Generated HTML Features
 
-- Single self-contained file with inline CSS, JS, and SVG icons
+- Single self-contained file (~580KB) with inline CSS, JS, and SVG sprite (`<symbol>`/`<use>`)
+- Artist popup data stored in a single JS lookup table (not duplicated per DOM element)
 - Responsive layout with mobile breakpoint at 480px
 - Sticky section headers (date, period, location) with gradient fade effect using IntersectionObserver
 - Artist cards with photo, name, schedule annotation, social links + follower counts
 - Lazy-loaded AVIF photos
-- **Timetable view** with CSS grid (desktop) and HTML table with sticky headers (mobile)
+- **Timetable view** with CSS grid (desktop) and HTML table with native scroll + sticky `<thead>` (mobile)
+- Dynamic row height via `--row-h` CSS variable (10px or 14px based on artist density)
+- Grid lines via CSS `repeating-linear-gradient` (no JS)
 - Per-artist hearts on photo thumbnails, calendar icon for personal schedule
 - B2B sets render as multi-artist cards
-- "Add to calendar" ICS export on each card (timezone, 10-min alarm, floor as location)
-- Mobile: hamburger menu, custom touch scroll with momentum and single-axis locking
+- "Add to calendar" via server-side ICS endpoint (`/ics/{slot_id}`) for native iOS/Android calendar integration
+- Mobile: hamburger menu, native overflow scroll
 - CSS variables for colors and font scale, WCAG 2.1 AA compliant contrast ratios
 - 7 floor colors (rainbow pastels, evenly spaced, colorblind-aware)
 - Artist schedule notes: floor + time on every card, "Also" cross-references for multi-slot artists

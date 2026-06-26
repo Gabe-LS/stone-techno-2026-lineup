@@ -41,10 +41,10 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 | `scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify scrapers |
 | `scraper/db.py` | SQLite schema, upserts, overrides, queries |
 | `scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
-| `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications |
-| `scraper/timetable_json.py` | Generates `timetable.json` mapping schedule slot UUIDs to set times (used by push notification scheduler) |
+| `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. SVG icons deduplicated via `<symbol>`/`<use>` sprite |
+| `scraper/timetable_json.py` | Generates `timetable.json` mapping schedule slot UUIDs to set times (used by push notification scheduler and ICS endpoint) |
 | `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
-| `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push notification scheduler |
+| `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push notification scheduler + ICS calendar export |
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
 
@@ -56,7 +56,7 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 ## Generated Artifacts (gitignored)
 
 - `lineup.db` — SQLite cache of artists, sections, follower counts
-- `output/lineup.html` — generated page (~6000+ lines with timetable)
+- `output/lineup.html` — generated page (~580KB with timetable)
 - `output/photos/*.avif` — processed artist photos (~100 files)
 - `output/timetable.json` — slot UUID → set time mapping for push notifications
 
@@ -67,10 +67,10 @@ These are regenerable. The source of truth is the live website + `overrides.toml
 The page includes both a line-up list and a timetable grid, toggled via the command bar. The timetable appears automatically when artists have `start_time`/`end_time` data in `artist_sections`.
 
 - **Desktop**: CSS grid with sticky floor headers and time labels
-- **Mobile**: HTML `<table>` with sticky `<th>`/`<td>` (no diagonal scroll); two nested divs (`tt-v-scroll` + `tt-h-scroll`) with custom JS touch handler (axis locking, momentum with friction 0.965, ease-in acceleration); floor header bar synced via `scrollLeft`
+- **Mobile**: HTML `<table>` with native scroll (`overflow: auto` on single `tt-v-scroll` container); sticky `<thead>` for floor headers (no JS sync needed); `table-layout: fixed` with `--row-h` CSS variable for row height; grid lines via CSS `repeating-linear-gradient`; dynamic `--row-h` (10px or 14px) based on artist density per slot
 - **B2B sets**: Multiple artists in the same time slot render as one card with per-artist hearts
 - **Schedule**: Calendar icon on each card, server-synced via `/api/session/{code}/schedule/{slot_id}`
-- **ICS export**: "Add to calendar" link on each card — generates .ics with timezone (Europe/Berlin), 10-min alarm, floor as location
+- **ICS export**: "Add to calendar" link on each card — server endpoint `GET /ics/{slot_id}` serves `.ics` file with `Content-Type: text/calendar` for native iOS/Android calendar integration
 - **Fake data**: `python seed_timetable.py` populates 5 day floors + 2 night floors (Grand Hall, Mischanlage) with time slots
 - **Hamburger menu**: mobile-only, shows/hides based on current view, preserves view in localStorage across reloads
 - **Artist schedule notes**: every list-view card shows floor + time; artists playing multiple slots get an "Also" line with cross-references
