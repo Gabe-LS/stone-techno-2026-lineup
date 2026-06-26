@@ -35,6 +35,30 @@ SVG_LT = _load_icon("linktree")
 SVG_YT = _load_icon("youtube")
 
 
+def _svg_to_symbol(svg: str, symbol_id: str) -> str:
+    import re as _re
+
+    vb = _re.search(r'viewBox="([^"]*)"', svg)
+    viewbox = vb.group(1) if vb else "0 0 24 24"
+    inner = _re.sub(r"^<svg[^>]*>", "", svg)
+    inner = _re.sub(r"</svg>$", "", inner)
+    attrs = ""
+    for attr in ("fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"):
+        m = _re.search(rf'{attr}="([^"]*)"', svg.split(">")[0])
+        if m and attr == "fill" and m.group(1) == "none":
+            attrs += f' {attr}="{m.group(1)}"'
+        elif m and attr != "fill":
+            attrs += f' {attr}="{m.group(1)}"'
+    return (
+        f'<symbol id="{symbol_id}" viewBox="{viewbox}"{attrs}>{inner.strip()}</symbol>'
+    )
+
+
+def _use_svg(symbol_id: str, **attrs: str) -> str:
+    attr_str = "".join(f' {k}="{v}"' for k, v in attrs.items())
+    return f'<svg{attr_str}><use href="#{symbol_id}"/></svg>'
+
+
 def _format_date_heading(date_str: str) -> str:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     return f"{dt.strftime('%A')}, {dt.strftime('%B')} {dt.day}, {dt.year}"
@@ -456,7 +480,7 @@ def render_output_html(
       .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: #fff; font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
       .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
-      .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; scroll-snap-align: start; scroll-snap-stop: always; }
+      .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; vertical-align: top; padding: 0; position: relative; }
       .tt-table tbody tr { height: var(--row-h); }
       .tt-table tbody tr:first-child { height: calc(var(--row-h) / 2); }
       .tt-table tbody tr:first-child td.tt-time-td { padding-bottom: calc(var(--row-h) / 2); }
@@ -483,6 +507,19 @@ def render_output_html(
     parts.append("  </style>")
     parts.append("</head>")
     parts.append("<body>")
+    heart_path = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+    cal_inner = '<rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>'
+    parts.append('  <svg style="display:none">')
+    parts.append(
+        f'    <symbol id="i-heart" viewBox="0 0 24 24"><path d="{heart_path}"/></symbol>'
+    )
+    parts.append(f'    <symbol id="i-cal" viewBox="0 0 24 24">{cal_inner}</symbol>')
+    parts.append(f"    {_svg_to_symbol(SVG_IG, 'i-ig')}")
+    parts.append(f"    {_svg_to_symbol(SVG_SC, 'i-sc')}")
+    parts.append(f"    {_svg_to_symbol(SVG_SP, 'i-sp')}")
+    parts.append(f"    {_svg_to_symbol(SVG_LT, 'i-lt')}")
+    parts.append(f"    {_svg_to_symbol(SVG_YT, 'i-yt')}")
+    parts.append("  </svg>")
     parts.append('  <div class="cmd-bar" id="cmd-bar">')
     parts.append('    <span class="view-label" id="view-label">Line-up</span>')
     parts.append('    <div class="cmd-group">')
@@ -757,21 +794,31 @@ def render_output_html(
             parts.append(f'        <span class="artist-also">{esc(sched_also)}</span>')
         parts.append('        <div class="links">')
         if ig:
-            parts.append(f"          {_link(ig, SVG_IG, ig_f or '')}")
+            parts.append(
+                f"          {_link(ig, _use_svg('i-ig', width='18', height='18'), ig_f or '')}"
+            )
         if sc:
-            parts.append(f"          {_link(sc, SVG_SC, sc_f or '')}")
+            parts.append(
+                f"          {_link(sc, _use_svg('i-sc', width='18', height='18'), sc_f or '')}"
+            )
         if sp:
-            parts.append(f"          {_link(sp, SVG_SP, sp_l or '')}")
+            parts.append(
+                f"          {_link(sp, _use_svg('i-sp', width='18', height='18'), sp_l or '')}"
+            )
         if lt:
-            parts.append(f"          {_link(lt, SVG_LT)}")
+            parts.append(
+                f"          {_link(lt, _use_svg('i-lt', width='18', height='18'))}"
+            )
         if yt:
-            parts.append(f"          {_link(yt, SVG_YT)}")
+            parts.append(
+                f"          {_link(yt, _use_svg('i-yt', width='18', height='18'))}"
+            )
         if not ig and not sc and not sp and not lt and not yt:
             parts.append('          <span class="missing">No links</span>')
         parts.append("        </div>")
         parts.append("        </div>")
         parts.append(
-            '        <button class="heart-btn" onclick="toggleHeart(this)" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></button>'
+            '        <button class="heart-btn" onclick="toggleHeart(this)" aria-label="Add to favorites" aria-pressed="false"><svg viewBox="0 0 24 24"><use href="#i-heart"/></svg></button>'
         )
         parts.append("      </li>")
 
@@ -912,6 +959,7 @@ def render_output_html(
                         needs_large_rows = True
         row_h = 14 if needs_large_rows else 10
 
+        artist_lookup: dict[str, list[dict]] = {}
         parts.append(f"  <style>.tt-table {{ --row-h: {row_h}px; }}</style>")
         parts.append('  <div id="timetable-view" style="display:none">')
 
@@ -929,7 +977,7 @@ def render_output_html(
         parts.append("  </div>")
 
         # Render timetable panels per section
-        heart_svg = '<svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>'
+        heart_svg = '<svg viewBox="0 0 24 24"><use href="#i-heart"/></svg>'
 
         for td in timetable_data:
             tt_date_str = td["date"]
@@ -1022,17 +1070,19 @@ def render_output_html(
                     artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
 
                     names = " b2b ".join(a.get("name", "") for a in group)
+                    artist_lookup[artist_id] = _json.loads(
+                        _artists_json(group, photos_prefix)
+                    )
                     data_attrs = (
                         f'data-artist-id="{esc(artist_id)}" '
                         f'data-name="{esc(names)}" '
                         f'data-time="{esc(s_display)} – {esc(e_display)}" '
                         f'data-floor="{esc(loc_name)}" '
                         f'data-ics-start="{esc(st)}" '
-                        f'data-ics-end="{esc(et)}" '
-                        f"data-artists='{esc(_artists_json(group, photos_prefix))}'"
+                        f'data-ics-end="{esc(et)}"'
                     )
 
-                    cal_svg = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>'
+                    cal_svg = '<svg viewBox="0 0 24 24"><use href="#i-cal"/></svg>'
                     is_b2b = len(group) > 1
 
                     cal_btn = (
@@ -1040,7 +1090,7 @@ def render_output_html(
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
                     )
                     parts.append(
-                        f'      <div class="tt-block floor-{esc(fid)}" data-floor-col="{col - 2}" style="grid-column: {col}; grid-row: {row_start} / {row_end};" {data_attrs}>'
+                        f'      <div class="tt-block floor-{esc(fid)}" style="grid-column: {col}; grid-row: {row_start} / {row_end};" {data_attrs}>'
                         f'<div class="tt-text">'
                         f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
                     )
@@ -1132,17 +1182,20 @@ def render_output_html(
                     )
                     artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, card_key))
                     names = " b2b ".join(a.get("name", "") for a in group)
+                    if artist_id not in artist_lookup:
+                        artist_lookup[artist_id] = _json.loads(
+                            _artists_json(group, photos_prefix)
+                        )
                     data_attrs = (
                         f'data-artist-id="{esc(artist_id)}" '
                         f'data-name="{esc(names)}" '
                         f'data-time="{esc(s_display)} – {esc(e_display)}" '
                         f'data-floor="{esc(loc_name)}" '
                         f'data-ics-start="{esc(st)}" '
-                        f'data-ics-end="{esc(et)}" '
-                        f"data-artists='{esc(_artists_json(group, photos_prefix))}'"
+                        f'data-ics-end="{esc(et)}"'
                     )
 
-                    cal_svg = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>'
+                    cal_svg = '<svg viewBox="0 0 24 24"><use href="#i-cal"/></svg>'
                     cal_btn = (
                         f'<button class="tt-cal" onclick="event.stopPropagation(); toggleSchedule(this)" '
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
@@ -1228,10 +1281,7 @@ def render_output_html(
                         continue
                     if (fi, row_idx) in artist_at_5:
                         row_span, block_html = artist_at_5[(fi, row_idx)]
-                        parts.append(
-                            f'<td rowspan="{row_span}" style="vertical-align:top;padding:0;position:relative;">'
-                            f"{block_html}</td>"
-                        )
+                        parts.append(f'<td rowspan="{row_span}">{block_html}</td>')
                     else:
                         parts.append("<td></td>")
 
@@ -1253,6 +1303,9 @@ def render_output_html(
         parts.append('    <div id="popup-artists"></div>')
         parts.append("  </div>")
 
+        parts.append(
+            f"  <script>var TT_ARTISTS={_json.dumps(artist_lookup, separators=(',', ':'))};</script>"
+        )
         parts.append("  </div>")  # end #timetable-view
 
     qr_js = (ICONS_DIR.parent / "qrcode.min.js").read_text(encoding="utf-8")
@@ -2076,21 +2129,12 @@ def render_output_html(
       return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + svg + ' ' + (label || '') + '</a>';
     }
     """)
-        parts.append(
-            f"    const SVG_IG_JS = `{SVG_IG.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
-        )
-        parts.append(
-            f"    const SVG_SC_JS = `{SVG_SC.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
-        )
-        parts.append(
-            f"    const SVG_SP_JS = `{SVG_SP.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
-        )
-        parts.append(
-            f"    const SVG_LT_JS = `{SVG_LT.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
-        )
-        parts.append(
-            f"    const SVG_YT_JS = `{SVG_YT.replace(chr(96), chr(92) + chr(96)).replace('${', chr(92) + '${')}`;"
-        )
+        parts.append("""
+    const SVG_IG_JS = '<svg width="18" height="18"><use href="#i-ig"/></svg>';
+    const SVG_SC_JS = '<svg width="18" height="18"><use href="#i-sc"/></svg>';
+    const SVG_SP_JS = '<svg width="18" height="18"><use href="#i-sp"/></svg>';
+    const SVG_LT_JS = '<svg width="18" height="18"><use href="#i-lt"/></svg>';
+    const SVG_YT_JS = '<svg width="18" height="18"><use href="#i-yt"/></svg>';""")
         parts.append("""
     let _popupJustOpened = false;
     document.querySelectorAll('.tt-block').forEach(block => {
@@ -2108,7 +2152,7 @@ def render_output_html(
     function openBlockPopup(block, px, py) {
         _popupJustOpened = true;
         const d = block.dataset;
-        const artists = JSON.parse(d.artists || '[]');
+        const artists = TT_ARTISTS[d.artistId] || [];
         const timetable = block.closest('.timetable');
         const tr = timetable ? timetable.getBoundingClientRect() : {left:0, right:window.innerWidth, top:0, bottom:window.innerHeight};
         requestAnimationFrame(() => {
