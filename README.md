@@ -1,6 +1,6 @@
 # Stone Techno Companion
 
-A scraper, enrichment pipeline, and static site generator for the [Stone Techno](https://www.stone-techno.com/) festival lineup. Produces an interactive single-page lineup with artist photos, social links, follower counts, and a favorites system that syncs across devices in real time.
+A scraper, enrichment pipeline, and static site generator for the [Stone Techno](https://www.stone-techno.com/) festival lineup. Produces an interactive single-page lineup with artist photos, social links, follower counts, a favorites system that syncs across devices in real time, and push notifications for scheduled sets.
 
 **Live at:** [stonetechno.deftlab.dev](https://stonetechno.deftlab.dev/)
 
@@ -10,7 +10,7 @@ A scraper, enrichment pipeline, and static site generator for the [Stone Techno]
 2. **Enriches** each artist by visiting their SoundCloud, Instagram, and Spotify profiles to collect follower/listener counts and discover missing social links
 3. **Processes photos** — downloads, resizes to 240x240 with adaptive sharpening, and encodes to AVIF using binary search to hit a target ssimulacra2 quality score of 78
 4. **Generates** a single self-contained HTML file with inline CSS, JS, and SVG icons
-5. **Serves** the page via a FastAPI backend with a favorites API and WebSocket-based real-time sync
+5. **Serves** the page via a FastAPI backend with a favorites API, WebSocket-based real-time sync, and push notifications
 
 ## Project Structure
 
@@ -22,8 +22,8 @@ stone-techno-companion/
 │   ├── db.py                    # SQLite schema, upserts, queries, overrides
 │   ├── images.py                # Photo download, resize (pyvips), AVIF encoding
 │   ├── render.py                # HTML generation — line-up list + timetable grid
+│   ├── timetable_json.py        # Generates timetable.json for push notification scheduler
 │   ├── render_timetable.py      # (Legacy) standalone timetable renderer
-│   ├── syncscroll.js            # Vendored syncscroll library (reference)
 │   ├── overrides.toml           # Manual corrections for wrong/missing links
 │   ├── qrcode.min.js            # QR code generator (bundled into HTML)
 │   └── icons/                   # SVG icons for Instagram, SoundCloud, Spotify,
@@ -35,14 +35,19 @@ stone-techno-companion/
 │       ├── favicon.svg              # Favicon (calendar + music note)
 │       └── favicon.png              # PNG version for OG image previews
 ├── server/
-│   ├── api.py                   # FastAPI app — favorites + schedule API + WebSocket sync
+│   ├── api.py                   # FastAPI app — favorites + schedule + push notifications
+│   ├── static/
+│   │   ├── sw.js                # Service worker for push notifications
+│   │   └── manifest.json        # PWA manifest
+│   ├── generate_vapid_keys.py   # One-time VAPID key pair generator
 │   ├── Dockerfile               # Python 3.12 slim + uvicorn
-│   ├── docker-compose.yml       # Container config with volume mounts
-│   └── requirements.txt         # fastapi, uvicorn[standard]
+│   ├── docker-compose.yml       # Container config with volume mounts + .env
+│   └── requirements.txt         # fastapi, uvicorn[standard], pywebpush
 ├── .github/workflows/
 │   └── deploy.yml               # Auto-deploy server to VPS on push to main
 ├── output/                      # Generated (gitignored)
-│   ├── lineup.html              # The final page (~2800 lines)
+│   ├── lineup.html              # The final page (~6000+ lines)
+│   ├── timetable.json           # Slot UUID → set time mapping for push scheduler
 │   └── photos/*.avif            # Processed artist photos (~100 files)
 ├── seed_timetable.py            # Seeds fake timetable data (5 day + 2 night floors)
 └── lineup.db                    # SQLite cache (gitignored)
@@ -92,7 +97,7 @@ python stone_techno_companion.py --render-only --no-photos
 python stone_techno_companion.py --render-only --deploy
 ```
 
-This rsyncs `output/lineup.html` and `output/photos/` to the VPS at `/root/services/stone-techno/server/static/`. No container restart needed — static files are volume-mounted.
+This rsyncs `output/lineup.html`, `output/timetable.json`, `output/photos/`, plus `server/static/sw.js` and `server/static/manifest.json` to the VPS. No container restart needed — static files are volume-mounted.
 
 ## Data Pipeline
 
@@ -171,6 +176,10 @@ Base URL: `https://stonetechno.deftlab.dev/api`
 | `DELETE` | `/api/session/{code}/schedule/{slot_id}` | Remove a slot from personal schedule |
 | `POST` | `/api/session/{code}/sync-pin` | Generate a 6-digit sync PIN (5-min TTL, single-use) |
 | `POST` | `/api/sync/{pin}` | Exchange a sync PIN for session credentials |
+| `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
+| `POST` | `/api/session/{code}/push/subscribe` | Store a push subscription |
+| `DELETE` | `/api/session/{code}/push/subscribe` | Remove a push subscription |
+| `GET` | `/api/session/{code}/push/status` | Check if push subscriptions exist |
 | `WS` | `/ws/{code}` | WebSocket for real-time sync |
 
 Pick operations are atomic — they use `json_group_array` with `json_each` and `UNION`/`WHERE` to avoid read-modify-write races.
@@ -269,17 +278,25 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
    python stone_techno_companion.py --render-only --no-photos --deploy
    ```
 
-4. Start the container:
+4. Generate VAPID keys and create `.env` on the VPS:
+   ```bash
+   pip install py-vapid cryptography
+   python server/generate_vapid_keys.py
+   # Copy vapid_private.pem to VPS: server/data/vapid_private.pem
+   # Create server/.env with VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY=/app/data/vapid_private.pem, VAPID_SUBJECT
+   ```
+
+5. Start the container:
    ```bash
    ssh root@209.38.244.136 "cd /root/services/stone-techno/server && docker compose up -d"
    ```
 
-5. Add the Caddy block above and reload:
+6. Add the Caddy block above and reload:
    ```bash
    ssh root@209.38.244.136 "docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
    ```
 
-6. Add the deploy secret to GitHub:
+7. Add the deploy secret to GitHub:
    ```bash
    gh secret set VPS_SSH_KEY < ~/.ssh/id_ed25519
    ```
@@ -298,9 +315,14 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
 - Mobile: hamburger menu, custom touch scroll with momentum and single-axis locking
 - CSS variables for colors and font scale, WCAG 2.1 AA compliant contrast ratios
 - 7 floor colors (rainbow pastels, evenly spaced, colorblind-aware)
-- Command bar: Line-up | Timetable | Show My Picks | Show My Schedule | Share | Sync
+- Artist schedule notes: floor + time on every card, "Also" cross-references for multi-slot artists
+- Artists sorted chronologically by set time within each section
+- Command bar: Line-up | Timetable | Show My Picks | Show My Schedule | Share | Sync | 🔔
 - Share modal with readonly URL input and copy-to-clipboard
 - Sync modal with QR code, 6-digit PIN, live countdown timer, and success confirmation via WebSocket
+- Push notifications via service worker (10 min before scheduled sets)
+- PWA manifest for iOS Add to Home Screen support
+- Browser-specific notification modals (Brave settings, iOS Safari instructions, copy-link for non-Safari iOS)
 - Read-only share views auto-filter to show only picked artists
 - Favicon (SVG inline + PNG for OG image) and Open Graph / Twitter Card metadata
 - Accessible: `aria-label`, `aria-pressed`, keyboard navigation, focus management in modals
