@@ -328,37 +328,20 @@ async def _push_notification_scheduler() -> None:
 
                     slot = slot_map[slot_id]
                     artists = " b2b ".join(slot["artists"])
-                    title = f"{artists} starts in 10 min"
-                    body = f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}"
-                    navigate_url = "/?view=timetable"
-
-                    payload_standard = json.dumps(
+                    payload = json.dumps(
                         {
-                            "title": title,
-                            "body": body,
+                            "title": f"{artists} starts in 10 min",
+                            "body": f"{slot['floor']}, {slot['start_hhmm']}–{slot['end_hhmm']}",
                             "tag": f"stc-{slot_id}",
-                            "url": navigate_url,
+                            "url": "/?view=timetable",
                         }
                     )
-                    payload_declarative = json.dumps(
-                        {
-                            "web_push": "8030",
-                            "notification": {
-                                "title": title,
-                                "body": body,
-                                "navigate": navigate_url,
-                            },
-                        }
-                    )
-
                     vapid_claims = {
                         "sub": os.environ.get(
                             "VAPID_SUBJECT", "mailto:noreply@example.com"
                         )
                     }
                     for endpoint, p256dh, auth in subs:
-                        is_apple = "push.apple.com" in endpoint
-                        payload = payload_declarative if is_apple else payload_standard
                         try:
                             webpush(
                                 subscription_info={

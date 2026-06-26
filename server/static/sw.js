@@ -1,6 +1,5 @@
 self.addEventListener('push', function (event) {
   var data = event.data ? event.data.json() : {};
-  if (data.web_push) return;
   var title = data.title || 'Stone Techno Companion';
   var options = {
     body: data.body || '',
