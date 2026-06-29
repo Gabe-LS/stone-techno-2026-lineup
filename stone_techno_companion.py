@@ -15,6 +15,7 @@ from scraper.db import (
     apply_overrides,
     init_db,
     load_assignments_from_db,
+    load_floor_curators,
     load_locations_from_db,
     load_sections_from_db,
     upsert_lineup,
@@ -156,6 +157,7 @@ def main() -> None:
         ordered_sections = load_sections_from_db(db)
         all_locations = load_locations_from_db(db)
         all_assignments = load_assignments_from_db(db)
+        floor_curators = load_floor_curators(OVERRIDES_PATH)
 
         # Enable timetable view when any artist has start_time
         has_timetable = any(
@@ -168,6 +170,7 @@ def main() -> None:
             all_assignments,
             all_locations,
             has_timetable=has_timetable,
+            floor_curators=floor_curators,
         )
 
         if has_timetable:

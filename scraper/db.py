@@ -148,8 +148,12 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
     if not overrides:
         return
 
+    NON_ARTIST_SECTIONS = {"floor_curators"}
+
     applied = 0
     for artist_name, fields in overrides.items():
+        if artist_name in NON_ARTIST_SECTIONS:
+            continue
         row = db.execute(
             "SELECT overlay_id FROM artists WHERE name = ?", (artist_name,)
         ).fetchone()
@@ -189,6 +193,16 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
     if applied:
         db.commit()
         print(f"Applied {applied} override(s) from overrides.toml")
+
+
+def load_floor_curators(overrides_path: Path) -> dict[str, str]:
+    if not overrides_path.exists():
+        return {}
+    import tomllib
+
+    with open(overrides_path, "rb") as f:
+        overrides = tomllib.load(f)
+    return dict(overrides.get("floor_curators", {}))
 
 
 def get_missing(

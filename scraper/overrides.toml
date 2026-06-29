@@ -41,3 +41,16 @@ photo = "https://cdn.amsterdam-dance-event.nl/images/images/transforms/artists-s
 [Function]
 spotify = "https://open.spotify.com/artist/6eu3TBnYM3SrkUU59SFhgp"
 soundcloud = false
+
+# Floor curators / hosts — per-day per-floor annotations.
+# Key format: "YYYY-MM-DD.location_id"
+# Value: full annotation text (e.g. "curated by Name" or "hosted by Name")
+[floor_curators]
+"2026-07-10.eisbahn" = "curated by Alarico"
+"2026-07-10.werksschwimmbad" = "curated by Verraco"
+"2026-07-11.salzlager" = "hosted by Serial Sound"
+"2026-07-11.koksofenbatterie" = "curated by Freddy K"
+"2026-07-11.eisbahn" = "curated by Gigi FM"
+"2026-07-12.koksofenbatterie" = "curated by Oscar Mulero"
+"2026-07-12.eisbahn" = "curated by D.Dan"
+"2026-07-12.werksschwimmbad" = "hosted by Clone Records"

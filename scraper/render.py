@@ -149,6 +149,7 @@ def render_output_html(
     locations: dict[str, dict],
     has_timetable: bool = False,
     photos_prefix: str = "photos/",
+    floor_curators: dict[str, str] | None = None,
 ) -> str:
     def esc(text: str | None) -> str:
         return html.escape(text or "")
@@ -248,7 +249,7 @@ def render_output_html(
       .cmd-bar { font-size: var(--font-xs); }
       h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; }
       h2 { font-size: var(--font-xl); padding: 6px 0; top: 100px; }
-      h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; top: 141px; margin: 16px 0 8px; }
+      h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; top: 148px; margin: 16px 0 8px; }
       h4.location-heading { top: 176px; }
       li.artist-item { gap: 10px; padding: 10px; }
       .artist-photo { width: 72px; height: 72px; border-radius: 4px; }
@@ -336,10 +337,12 @@ def render_output_html(
     .period-tab.active { background: #333; color: #fff; border-color: #333; }
 
     /* Floor headers */
-    .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: 10; background: #fff; padding: 8px 0 6px; margin: 24px 0 12px; }
+    .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: 10; background: #fff; padding: 8px 0 6px; margin: 24px 0 12px; align-items: start; }
     .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
     .floor-header-bar.stuck::after { opacity: 1; }
-    .floor-header { text-align: center; font-weight: 700; font-size: var(--font-sm); padding: 8px 12px; border-radius: 999px; margin: 0 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .floor-header { text-align: center; margin: 0 3px; background: none !important; }
+    .floor-header > span:first-child { display: block; font-weight: 700; font-size: var(--font-sm); padding: 8px 12px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .floor-curator { font-style: italic; font-size: var(--font-xs); color: var(--color-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Timetable grid */
     .timetable-panel { display: none; }
@@ -390,13 +393,13 @@ def render_output_html(
     .floor-salzlager { background: color-mix(in srgb, var(--floor-salzlager) 88%, transparent); }
     .floor-werksschwimmbad { background: color-mix(in srgb, var(--floor-werksschwimmbad) 88%, transparent); }
     .floor-unknown { background: rgba(243, 244, 246, 0.88); }
-    .floor-header.floor-eisbahn { background: var(--floor-eisbahn); }
-    .floor-header.floor-grand-hall { background: var(--floor-grand-hall); }
-    .floor-header.floor-koksofenbatterie { background: var(--floor-koksofenbatterie); }
-    .floor-header.floor-listening-floor { background: var(--floor-listening-floor); }
-    .floor-header.floor-mischanlage { background: var(--floor-mischanlage); }
-    .floor-header.floor-salzlager { background: var(--floor-salzlager); }
-    .floor-header.floor-werksschwimmbad { background: var(--floor-werksschwimmbad); }
+    .floor-header.floor-eisbahn > span:first-child { background: var(--floor-eisbahn); }
+    .floor-header.floor-grand-hall > span:first-child { background: var(--floor-grand-hall); }
+    .floor-header.floor-koksofenbatterie > span:first-child { background: var(--floor-koksofenbatterie); }
+    .floor-header.floor-listening-floor > span:first-child { background: var(--floor-listening-floor); }
+    .floor-header.floor-mischanlage > span:first-child { background: var(--floor-mischanlage); }
+    .floor-header.floor-salzlager > span:first-child { background: var(--floor-salzlager); }
+    .floor-header.floor-werksschwimmbad > span:first-child { background: var(--floor-werksschwimmbad); }
 
     /* Mobile table — hidden on desktop */
     .tt-table-wrap { display: none; }
@@ -414,7 +417,7 @@ def render_output_html(
     .tt-popup .links a:hover { color: #111; }
 
     @media (max-width: 768px) {
-      .floor-header { font-size: var(--font-xs); padding: 6px 2px; }
+      .floor-header > span:first-child { font-size: var(--font-xs); padding: 6px 2px; }
       .tt-block { font-size: var(--font-xs); padding: 6px 7px; margin: 2px; gap: 5px; }
       .day-tab { padding: 6px 10px; font-size: var(--font-xs); }
     }
@@ -467,16 +470,17 @@ def render_output_html(
       .tt-v-scroll::-webkit-scrollbar { display: none; }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
-      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: #fff; padding: 4px 2px 4px; text-align: center; }
+      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: #fff; padding: 4px 2px 4px; text-align: center; vertical-align: top; }
       .tt-table thead th:first-child { left: 0; z-index: 3; background: #fff; width: 40px; min-width: 40px; }
-      .tt-floor-th span { display: block; padding: 6px 10px; border-radius: 999px; font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
-      .tt-floor-th.floor-eisbahn span { background: var(--floor-eisbahn); }
-      .tt-floor-th.floor-grand-hall span { background: var(--floor-grand-hall); }
-      .tt-floor-th.floor-koksofenbatterie span { background: var(--floor-koksofenbatterie); }
-      .tt-floor-th.floor-listening-floor span { background: var(--floor-listening-floor); }
-      .tt-floor-th.floor-mischanlage span { background: var(--floor-mischanlage); }
-      .tt-floor-th.floor-salzlager span { background: var(--floor-salzlager); }
-      .tt-floor-th.floor-werksschwimmbad span { background: var(--floor-werksschwimmbad); }
+      .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: 999px; font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
+      .tt-floor-th .floor-curator { display: block; font-size: 10px; padding: 1px 0 2px; margin: 0; }
+      .tt-floor-th.floor-eisbahn > span:first-child { background: var(--floor-eisbahn); }
+      .tt-floor-th.floor-grand-hall > span:first-child { background: var(--floor-grand-hall); }
+      .tt-floor-th.floor-koksofenbatterie > span:first-child { background: var(--floor-koksofenbatterie); }
+      .tt-floor-th.floor-listening-floor > span:first-child { background: var(--floor-listening-floor); }
+      .tt-floor-th.floor-mischanlage > span:first-child { background: var(--floor-mischanlage); }
+      .tt-floor-th.floor-salzlager > span:first-child { background: var(--floor-salzlager); }
+      .tt-floor-th.floor-werksschwimmbad > span:first-child { background: var(--floor-werksschwimmbad); }
       .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: #fff; font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
       .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
@@ -1007,8 +1011,16 @@ def render_output_html(
             parts.append('      <div class="floor-header-gutter"></div>')
             for fid in floor_ids:
                 loc_name = locations.get(fid, {}).get("name", fid)
+                curator_key = f"{tt_date_str}.{fid}"
+                curator_text = (floor_curators or {}).get(curator_key, "")
+                curator_html = (
+                    f'<span class="floor-curator">{esc(curator_text)}</span>'
+                    if curator_text
+                    else ""
+                )
                 parts.append(
-                    f'      <div class="floor-header floor-{esc(fid)}">{esc(loc_name)}</div>'
+                    f'      <div class="floor-header floor-{esc(fid)}">'
+                    f"<span>{esc(loc_name)}</span>{curator_html}</div>"
                 )
             parts.append("    </div>")
 
@@ -1141,9 +1153,17 @@ def render_output_html(
             parts.append("    <thead><tr><th></th>")
             for fid in floor_ids:
                 loc_name = locations.get(fid, {}).get("name", fid)
-                parts.append(
-                    f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span></th>'
-                )
+                curator_key = f"{tt_date_str}.{fid}"
+                curator_text = (floor_curators or {}).get(curator_key, "")
+                if curator_text:
+                    parts.append(
+                        f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span>'
+                        f'<span class="floor-curator">{esc(curator_text)}</span></th>'
+                    )
+                else:
+                    parts.append(
+                        f'<th class="tt-floor-th floor-{esc(fid)}"><span>{esc(loc_name)}</span></th>'
+                    )
             parts.append("</tr></thead>")
 
             # tbody — one row per minute
