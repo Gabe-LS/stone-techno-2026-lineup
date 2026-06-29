@@ -31,7 +31,7 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 
 1. `stone_techno_companion.py` orchestrates: scrape → enrich → process photos → render HTML + timetable.json
 2. `lineup.db` (SQLite) caches all scraped data — follower counts and photos are only fetched once unless `--refresh-*` flags are used
-3. `scraper/overrides.toml` provides manual corrections applied after scraping, before enrichment
+3. `scraper/overrides.toml` provides manual corrections (artist links) and editorial data (floor curators) applied after scraping, before enrichment
 4. Output is a single HTML file (`output/lineup.html`) + AVIF photos (`output/photos/`) + `output/timetable.json`
 
 ### Key files
@@ -74,6 +74,7 @@ The page includes both a line-up list and a timetable grid, toggled via the comm
 - **Fake data**: `python seed_timetable.py` populates 5 day floors + 2 night floors (Grand Hall, Mischanlage) with time slots
 - **Hamburger menu**: mobile-only, shows/hides based on current view, preserves view in localStorage across reloads
 - **Artist schedule notes**: every list-view card shows floor + time; artists playing multiple slots get an "Also" line with cross-references
+- **Floor curators**: "curated by" / "hosted by" annotations below floor name pills, per-day per-floor. Data lives in `[floor_curators]` section of `scraper/overrides.toml` keyed as `"YYYY-MM-DD.location_id"`. Desktop uses `<span>` inside `.floor-header`; mobile uses `<span class="floor-curator">` inside `<th>`. The `.floor-header` div has `background: none !important` to prevent the generic `.floor-X` card color from bleeding onto the container — floor color is on `> span:first-child` only
 
 ### Design system
 
@@ -96,45 +97,11 @@ Production: Docker container on a DigitalOcean VPS behind Caddy (auto-TLS). Data
 
 ## Push Notifications
 
-Web Push notifications alert users 10 minutes before their scheduled sets start.
+See README for full push documentation (platform support, VAPID setup, API endpoints).
 
-### How it works
+Implementation notes:
 
-1. User schedules sets via the calendar icon on timetable cards
-2. User enables notifications (bell icon on desktop, "Enable notifications" in mobile hamburger menu)
-3. Browser creates a push subscription (VAPID-authenticated) and sends it to the server
-4. Server background scheduler runs every 60s, checks `timetable.json` for upcoming sets, matches against sessions' schedule arrays, and sends push via `pywebpush`
-5. Service worker receives push → shows native notification with artist name, floor, and time
-6. Notification click opens the app on the timetable view (uses Cache Storage flag as iOS workaround)
-
-### Platform support
-
-| Platform | Status |
-|---|---|
-| Chrome / Edge (desktop) | Works out of the box |
-| Brave (desktop) | Requires "Use Google services for push messaging" in settings — app shows instructions modal |
-| Firefox (desktop) | Works out of the box (uses Mozilla push service) |
-| Safari (iOS PWA) | Works after Add to Home Screen (iOS 16.4+) |
-| Chrome / Firefox (iOS) | Works after Add to Home Screen |
-| Brave (iOS) | Must switch to Safari first — app shows copy-link + instructions modal |
-
-### VAPID keys
-
-Generated once via `server/generate_vapid_keys.py`. Stored as env vars on the VPS (`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT`) in `server/.env`, read by Docker Compose.
-
-### Push API endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/push/vapid-key` | Returns VAPID public key for client subscription |
-| `POST` | `/api/session/{code}/push/subscribe` | Store a push subscription |
-| `DELETE` | `/api/session/{code}/push/subscribe` | Remove a push subscription |
-| `GET` | `/api/session/{code}/push/status` | Check if subscriptions exist |
-
-### Deduplication
-
-`sent_notifications` table tracks `(session_id, slot_id)` pairs to prevent re-sending. Pruned after 7 days. Dead push subscriptions (HTTP 404/410) are automatically removed on failed send.
-
-### Re-sync on load
-
-On every page load, if push is enabled, the client re-sends its subscription to the server. This recovers from server DB purges or PWA reinstalls without requiring the user to toggle notifications off and on.
+- **Scheduler**: background task in `api.py` runs every 60s, matches `timetable.json` slots against sessions' schedule arrays, sends via `pywebpush`
+- **Dedup**: `sent_notifications` table tracks `(session_id, slot_id)` pairs. Pruned after 7 days. Dead subscriptions (HTTP 404/410) auto-removed on failed send
+- **Re-sync on load**: client re-sends its push subscription on every page load to recover from DB purges or PWA reinstalls
+- **iOS workaround**: notification click uses a Cache Storage flag to open on the timetable view (service worker can't access localStorage)

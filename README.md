@@ -134,6 +134,14 @@ photo = "https://cdn.amsterdam-dance-event.nl/images/.../photo.webp"
 
 Supported fields: `instagram`, `soundcloud`, `spotify`, `linktree`, `youtube`, `photo`.
 
+A separate `[floor_curators]` section stores per-day per-floor "curated by" / "hosted by" annotations, rendered below the floor name pill in timetable headers:
+
+```toml
+[floor_curators]
+"2026-07-11.koksofenbatterie" = "curated by Freddy K"
+"2026-07-12.werksschwimmbad" = "hosted by Clone Records"
+```
+
 ### Image Processing
 
 Photos go through:
@@ -317,7 +325,7 @@ Caddy auto-provisions the TLS certificate. The `stone-techno` container and Cadd
 - "Add to calendar" via server-side ICS endpoint (`/ics/{slot_id}`) for native iOS/Android calendar integration
 - Mobile: hamburger menu, native overflow scroll
 - CSS variables for colors and font scale, WCAG 2.1 AA compliant contrast ratios
-- 7 floor colors (rainbow pastels, evenly spaced, colorblind-aware)
+- 7 floor colors (rainbow pastels, evenly spaced, colorblind-aware) with per-day curator/host annotations
 - Artist schedule notes: floor + time on every card, "Also" cross-references for multi-slot artists
 - Artists sorted chronologically by set time within each section
 - Command bar: Line-up | Timetable | Show My Picks | Show My Schedule | Share | Sync | 🔔
