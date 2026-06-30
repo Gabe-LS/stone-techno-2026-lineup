@@ -664,12 +664,31 @@ load();
 # --- Mount ---
 
 
+CHAT_DIR = Path(__file__).resolve().parent / "chat"
+
+
 def mount_chat(app):
+    from fastapi.staticfiles import StaticFiles
+
     app.include_router(router)
 
     @app.websocket("/ws/chat/{token}")
     async def chat_websocket(websocket: WebSocket, token: str):
         await handle_chat_ws(websocket, token, DEFAULT_EVENT_ID)
+
+    @app.get("/chat", response_class=HTMLResponse)
+    @app.get("/chat/", response_class=HTMLResponse)
+    async def serve_chat():
+        chat_html = CHAT_DIR / "chat.html"
+        if chat_html.exists():
+            return HTMLResponse(chat_html.read_text(encoding="utf-8"))
+        raise HTTPException(404, "Chat not available")
+
+    uploads_dir = CHAT_DIR / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        "/chat/uploads", StaticFiles(directory=str(uploads_dir)), name="chat-uploads"
+    )
 
     _load_disposable_domains()
 

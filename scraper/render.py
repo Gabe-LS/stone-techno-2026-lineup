@@ -611,6 +611,9 @@ def render_output_html(
     parts.append("    </div>")
     parts.append('    <div class="cmd-group cmd-group-right">')
     parts.append(
+        '      <button type="button" onmousedown="this.blur()" onclick="window.open(\'/chat\',\'_self\')">Chat</button>'
+    )
+    parts.append(
         '      <button type="button" onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
     )
     parts.append(
@@ -644,6 +647,9 @@ def render_output_html(
         parts.append(
             '    <button type="button" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\')); closeMenu()" id="dd-schedule" style="display:none">Show My Schedule</button>'
         )
+    parts.append(
+        "    <button type=\"button\" onclick=\"window.open('/chat','_self'); closeMenu()\">Chat</button>"
+    )
     parts.append(
         '    <button type="button" onclick="openShareModal(); closeMenu()">Share</button>'
     )
