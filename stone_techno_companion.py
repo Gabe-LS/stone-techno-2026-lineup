@@ -53,9 +53,10 @@ def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
             src = icons_dir / fname
             if src.exists():
                 shutil.copy2(src, staging_path / fname)
-        timetable_src = output_dir / "timetable.json"
-        if timetable_src.exists():
-            shutil.copy2(timetable_src, staging_path / "timetable.json")
+        for json_name in ("timetable.json", "bios.json"):
+            json_src = output_dir / json_name
+            if json_src.exists():
+                shutil.copy2(json_src, staging_path / json_name)
         server_static = Path(__file__).resolve().parent / "server" / "static"
         for fname in ("manifest.json", "sw.js"):
             src = server_static / fname

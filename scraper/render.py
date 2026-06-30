@@ -195,14 +195,19 @@ def render_output_html(
     )
     parts.append('  <link rel="manifest" href="/manifest.json">')
     parts.append('  <meta name="mobile-web-app-capable" content="yes">')
+    parts.append('  <meta name="apple-mobile-web-app-capable" content="yes">')
     parts.append(
         '  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
     )
+    parts.append(f'  <meta name="apple-mobile-web-app-title" content="{esc(title)}">')
+    parts.append('  <meta name="theme-color" content="#111">')
     parts.append("  <style>")
     parts.append("""
     :root {
       --color-text: #111;
       --color-bg: #fff;
+      --color-surface: #f5f5f5;
+      --color-surface-hover: #eee;
       --color-muted: #717171;
       --color-muted-icon: #888;
       --color-border: #e0e0e0;
@@ -210,51 +215,159 @@ def render_output_html(
       --color-schedule: #4a90d9;
       --color-line-hour: #ccc;
       --color-line-half: #e8e8e8;
-      --floor-eisbahn: #c6f9c5;
-      --floor-grand-hall: #c5f9f1;
-      --floor-koksofenbatterie: #c5d5f9;
-      --floor-listening-floor: #e2c5f9;
-      --floor-mischanlage: #f9c5e4;
-      --floor-salzlager: #f9d3c5;
-      --floor-werksschwimmbad: #f3f9c5;
+      --floor-eisbahn: 198, 249, 197;
+      --floor-grand-hall: 197, 249, 241;
+      --floor-koksofenbatterie: 197, 213, 249;
+      --floor-listening-floor: 226, 197, 249;
+      --floor-mischanlage: 249, 197, 228;
+      --floor-salzlager: 249, 211, 197;
+      --floor-werksschwimmbad: 243, 249, 197;
       --font-2xl: 2em;
       --font-xl: 1.5em;
       --font-lg: 1.125em;
       --font-base: 1em;
       --font-sm: 0.875em;
       --font-xs: 0.75em;
+      --shadow-modal: 0 8px 24px rgba(0,0,0,.12);
+      --radius-card: 8px;
+      --radius-modal: 14px;
+      --transition-fast: 0.15s;
+      --fade-gradient: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%);
     }
+
+    /* --- Reset & base --- */
     *, *::before, *::after { box-sizing: border-box; }
     html { overscroll-behavior: none; scrollbar-width: none; }
     ::-webkit-scrollbar { display: none; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 960px; margin: 0 auto; padding: 0 24px; color: var(--color-text); background: var(--color-bg); }
-    h1 { margin-bottom: 32px; font-size: var(--font-2xl); position: sticky; top: 28px; background: #fff; z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
+
+    /* --- Command bar --- */
+    .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 16px; }
+    .cmd-group { display: flex; align-items: stretch; }
+    .cmd-bar button { background: none; color: #aaa; border: none; cursor: pointer; padding: 0 16px; font-size: var(--font-base); white-space: nowrap; text-align: center; transition: color var(--transition-fast); letter-spacing: 0.03em; }
+    .cmd-bar button:focus:not(:focus-visible) { outline: none; }
+    .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
+    .cmd-bar button.active { color: #fff; }
+    .cmd-sep { width: 1px; background: #444; margin: 6px 16px; }
+    @media (hover: hover) { .cmd-bar button:hover { color: #fff; } }
+
+    /* --- Sticky headings --- */
+    h1 { margin-bottom: 32px; font-size: var(--font-2xl); position: sticky; top: 28px; background: var(--color-bg); z-index: 30; padding: 12px 0 8px; border-bottom: 2px solid #222; }
     section.date-section { margin-bottom: 48px; }
-    h2 { position: sticky; top: 96px; background: #fff; z-index: 20; padding: 10px 0 8px; margin-bottom: 8px; font-size: var(--font-xl); border-bottom: 1px solid #ccc; }
-    h3.period-heading { position: sticky; top: 150px; background: #fff; z-index: 10; padding: 8px 0 6px; margin: 24px 0 12px; font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: none; }
-    .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+    .date-section > h2 { position: sticky; top: 96px; background: var(--color-bg); z-index: 20; padding: 10px 0 8px; margin-bottom: 8px; font-size: var(--font-xl); border-bottom: 1px solid var(--color-line-hour); }
+    h3.period-heading { position: sticky; top: 150px; background: var(--color-bg); z-index: 10; padding: 8px 0 6px; margin: 24px 0 12px; font-size: var(--font-lg); color: #333; text-transform: uppercase; letter-spacing: 0.05em; }
+    .fade-after::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
     .fade-after.stuck::after { opacity: 1; }
-    h4.location-heading { position: sticky; top: 190px; background: #fff; z-index: 10; font-size: var(--font-base); padding: 6px 0 4px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #eee; }
+    h4.location-heading { position: sticky; top: 190px; background: var(--color-bg); z-index: 10; font-size: var(--font-base); padding: 6px 0 4px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid var(--color-surface-hover); }
     h4.location-heading small { font-weight: normal; color: var(--color-muted); }
+
+    /* --- Artist list --- */
     ul.artist-list { list-style: none; padding: 0; margin: 0; }
-    li.artist-item { display: flex; align-items: center; gap: 16px; padding: 12px; margin-bottom: 8px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee; }
-    .artist-photo { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: #eee; border-radius: 6px; }
+    li.artist-item { display: flex; align-items: center; gap: 16px; padding: 12px; margin-bottom: 8px; background: #f9f9f9; border-radius: var(--radius-card); border: 1px solid var(--color-surface-hover); }
+    .artist-photo { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; }
+    .photo-placeholder { width: 120px; height: 120px; flex-shrink: 0; background: var(--color-surface-hover); border-radius: 6px; }
     .artist-info { flex: 1; min-width: 0; }
     .artist-name { font-weight: 700; font-size: var(--font-lg); display: block; margin-bottom: 3px; cursor: pointer; }
-    .artist-photo { cursor: pointer; }
     .artist-schedule { color: var(--color-muted); font-size: var(--font-sm); display: block; margin-bottom: 6px; }
     .artist-also { color: var(--color-muted); font-size: var(--font-xs); line-height: 1; margin-top: 4px; }
+
+    /* --- Social links --- */
     .links { display: flex; flex-wrap: wrap; column-gap: 18px; row-gap: 4px; align-items: center; }
     .links a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #555; font-size: var(--font-xs); padding: 3px 0; min-width: 72px; font-variant-numeric: tabular-nums; }
-    .links a:hover { color: #111; }
     .links a svg { flex-shrink: 0; }
     .missing { color: var(--color-muted); font-size: var(--font-xs); }
+    @media (hover: hover) { .links a:hover { color: var(--color-text); } }
+
+    /* --- Heart button --- */
+    .heart-btn { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+    .heart-btn svg { fill: none; stroke: var(--color-muted-icon); stroke-width: 2; transition: fill var(--transition-fast), stroke var(--transition-fast); width: 22px; height: 22px; }
+    .heart-btn:focus:not(:focus-visible) { outline: none; }
+    .heart-btn.active svg { fill: var(--color-accent); stroke: var(--color-accent); }
+
+    /* --- Filters --- */
+    .filter-active .artist-item:not(.hearted) { display: none; }
+    .filter-active .tt-block:not(.hearted):not(:has(.tt-artist-row.hearted)) { opacity: 0.15; }
+
+    /* --- Bio overlay --- */
+    .modal-box.bio-box { background: var(--color-bg); border-radius: var(--radius-modal); padding: 0; width: 480px; max-width: 100%; color: var(--color-text); box-shadow: var(--shadow-modal); max-height: 80vh; overflow: hidden; text-align: left; }
+    .bio-scroll { max-height: 80vh; overflow-y: auto; padding: 24px; -webkit-overflow-scrolling: touch; }
+    .bio-header { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+    .bio-photo { width: 128px; height: 128px; border-radius: var(--radius-card); object-fit: cover; flex-shrink: 0; }
+    .bio-photo-placeholder { width: 128px; height: 128px; border-radius: var(--radius-card); background: var(--color-surface-hover); flex-shrink: 0; }
+    .bio-name { font-weight: 700; font-size: var(--font-xl); margin-top: 4px; }
+    .bio-text { font-size: var(--font-sm); line-height: 1.6; color: #333; white-space: pre-line; }
+    .bio-text:empty { display: none; }
+    .bio-empty { font-size: var(--font-sm); color: var(--color-muted); font-style: italic; }
+    .bio-videos { margin-top: 16px; }
+    .bio-videos-title { font-size: var(--font-sm); font-weight: 600; margin-bottom: 10px; color: var(--color-text); }
+    .bio-video { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; text-decoration: none; color: inherit; border-radius: 6px; transition: background var(--transition-fast); padding: 4px; margin-left: -4px; margin-right: -4px; }
+    .bio-video:last-child { margin-bottom: 0; }
+    .bio-video-thumb { width: 120px; height: 90px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--color-surface-hover); }
+    .bio-video-info { flex: 1; min-width: 0; }
+    .bio-video-title { font-size: var(--font-xs); font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .bio-video-meta { font-size: var(--font-xs); color: var(--color-muted); margin-top: 3px; }
+    @media (hover: hover) { .bio-video:hover { background: var(--color-surface); } }
+
+    /* --- Modals --- */
+    .modal-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.4); padding: 24px; }
+    .modal-overlay.open { display: flex; justify-content: center; align-items: center; overflow-y: auto; overscroll-behavior: contain; }
+    .modal-box { background: var(--color-bg); border-radius: var(--radius-modal); padding: 24px; width: 420px; max-width: 100%; text-align: center; color: var(--color-text); box-shadow: var(--shadow-modal); }
+    .modal-box h3 { margin: 0 0 6px; font-size: var(--font-base); font-weight: 600; text-wrap: balance; }
+    .modal-box .sub { font-size: var(--font-xs); color: var(--color-muted-icon); margin: 0 0 14px; text-wrap: balance; }
+    .modal-link { display: block; width: 100%; background: var(--color-surface); padding: 12px 14px; border-radius: var(--radius-card); font-size: var(--font-sm); font-family: inherit; color: #333; cursor: pointer; transition: background var(--transition-fast); margin: 0; border: none; text-align: left; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+    .modal-link:focus:not(:focus-visible) { outline: none; }
+    .modal-link:focus-visible { outline: 1px solid var(--color-text); outline-offset: 2px; }
+    .modal-link.copied { background: #d4edda; text-align: center; }
+    .modal-box canvas { display: block; margin: 10px auto; border-radius: 6px; }
+    .modal-box .or-line { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+    .modal-box .or-line hr { flex: 1; border: none; border-top: 1px solid var(--color-border); }
+    .modal-box .or-line span { color: #bbb; font-size: var(--font-xs); }
+    .modal-box .tabs { display: flex; gap: 3px; margin-bottom: 14px; border-radius: var(--radius-card); border: 1px solid var(--color-border); padding: 3px; background: var(--color-surface); }
+    .modal-box .tabs button { flex: 1; background: transparent; border: none; padding: 7px 4px; cursor: pointer; font-size: var(--font-xs); color: var(--color-muted-icon); border-radius: 5px; transition: color var(--transition-fast), background var(--transition-fast); }
+    .modal-box .tabs button:focus:not(:focus-visible) { outline: none; }
+    .modal-box .tabs button:focus-visible { outline: 1px solid var(--color-text); outline-offset: -2px; }
+    .modal-box .tabs button.on { background: var(--color-text); color: #fff; }
+    .modal-box .pane { display: none; }
+    .modal-box .pane.on { display: block; }
+    .modal-box .lbl { font-size: var(--font-sm); color: #333; text-align: left; margin: 0 0 4px; }
+    .modal-box .recv-lbl { font-size: var(--font-sm); color: #333; text-align: left; margin: 10px 0 4px; }
+    .modal-box .steps { counter-reset: s; }
+    .modal-box .steps p { text-align: left; font-size: var(--font-xs); color: #333; margin: 5px 0; padding-left: 20px; position: relative; }
+    .modal-box .steps p::before { content: counter(s) ". "; counter-increment: s; font-weight: 600; position: absolute; left: 0; }
+    .modal-box .btn { background: var(--color-text); color: #fff; border: none; padding: 7px 18px; border-radius: 5px; cursor: pointer; font-size: var(--font-sm); margin-top: 8px; }
+    .modal-box .btn:focus:not(:focus-visible) { outline: none; }
+    .modal-box .btn:focus-visible { outline: 1px solid var(--color-text); outline-offset: 2px; }
+    .qr-wrap { display: block; }
+    @media (hover: hover) {
+      .modal-link:hover { background: var(--color-surface-hover); }
+      .modal-box .tabs button:hover:not(.on) { background: var(--color-surface-hover); color: #555; }
+      .modal-box .btn:hover { background: #333; }
+    }
+
+    /* --- Pin / sync --- */
+    .pin { display: flex; gap: 5px; justify-content: center; margin: 10px 0; }
+    .pin span { width: 28px; height: 36px; font-size: var(--font-lg); font-weight: 700; border: 1px solid #ddd; border-radius: 5px; background: var(--color-surface); color: var(--color-text); display: flex; align-items: center; justify-content: center; line-height: 1; }
+    .sync-expiry { font-size: var(--font-xs); color: var(--color-muted-icon); text-align: center; margin: 8px 0 0; }
+    .sync-expiry a { color: inherit; text-decoration: underline; cursor: pointer; }
+    .pin-wrap { position: relative; cursor: text; margin: 10px 0; -webkit-tap-highlight-color: transparent; }
+    .pin-wrap .pin { pointer-events: none; }
+    .pin-wrap .pin span.active { border-color: var(--color-text); background: var(--color-bg); }
+    .pin-wrap.focused .pin span.active:empty::after { content: ''; width: 2px; height: 1.2em; background: var(--color-text); border-radius: 1px; animation: blink 1s step-end infinite; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    .pin-wrap .pin span.filled { color: var(--color-text); }
+    .pin-real { position: absolute; inset: 0; opacity: 0; font-size: 16px; width: 100%; height: 100%; border: none; padding: 0; margin: 0; -webkit-tap-highlight-color: transparent; }
+
+    /* --- Hamburger menu (hidden on desktop) --- */
+    .hamburger { display: none; }
+    .view-label { display: none; }
+    .cmd-dropdown { display: none; }
+    .menu-overlay { display: none; }
+
+    /* --- Mobile (480px) --- */
     @media (max-width: 480px) {
       body { padding: 0 12px; }
-      .cmd-bar { font-size: var(--font-xs); }
       h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; }
-      h2 { font-size: var(--font-xl); padding: 6px 0; top: 100px; }
+      .date-section > h2 { font-size: var(--font-xl); padding: 6px 0; top: 100px; }
       h3.period-heading { font-size: var(--font-base); padding: 6px 0 4px; top: 148px; margin: 16px 0 8px; }
       h4.location-heading { top: 176px; }
       li.artist-item { gap: 10px; padding: 10px; align-items: flex-start; flex-wrap: wrap; }
@@ -267,109 +380,29 @@ def render_output_html(
       .links a { font-size: var(--font-xs); min-width: 72px; gap: 3px; }
       .links a svg { width: 14px; height: 14px; }
       .heart-btn svg { width: 18px; height: 18px; }
+      .qr-wrap { display: none; }
+      .modal-box .tabs { flex-direction: column; }
+      .modal-box.bio-box { border-radius: 10px; }
+      .bio-photo, .bio-photo-placeholder { width: 96px; height: 96px; }
+      .bio-name { font-size: var(--font-lg); }
+      .bio-video-thumb { width: 96px; height: 72px; }
     }
-    .heart-btn { background: none; border: none; cursor: pointer; padding: 6px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
-    .heart-btn svg { fill: none; stroke: var(--color-muted-icon); stroke-width: 2; transition: fill 0.15s, stroke 0.15s; width: 22px; height: 22px; }
-    .heart-btn:hover:not(.active) svg { stroke: var(--color-muted-icon); }
-    .heart-btn:focus:not(:focus-visible) { outline: none; }
-    .heart-btn.active svg { fill: var(--color-accent); stroke: var(--color-accent); }
-    .cmd-bar { position: sticky; top: 0; z-index: 40; background: #111; color: #fff; display: flex; align-items: stretch; justify-content: space-between; height: 28px; font-size: var(--font-xs); padding: 0 16px; }
-    .cmd-group { display: flex; align-items: stretch; }
-    .cmd-bar button { background: none; color: #aaa; border: none; cursor: pointer; padding: 0 16px; font-size: var(--font-base); white-space: nowrap; text-align: center; transition: color 0.1s; letter-spacing: 0.03em; }
-    .cmd-bar button:hover { color: #fff; }
-    .cmd-bar button:focus-visible { outline: 1px solid #fff; outline-offset: -2px; }
-    .cmd-bar button:focus:not(:focus-visible) { outline: none; }
-    .cmd-bar button.active { color: #fff; }
-    .cmd-sep { width: 1px; background: #444; margin: 6px 16px; }
-    .filter-active .artist-item:not(.hearted) { display: none; }
-    .filter-active .tt-block:not(.hearted):not(:has(.tt-artist-row.hearted)) { opacity: 0.15; }
-
-    /* --- Bio overlay --- */
-    .modal-box.bio-box { background:#fff; border-radius:14px; padding:0; width:480px; max-width:100%; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:80vh; overflow:hidden; text-align:left; }
-    .bio-scroll { max-height:80vh; overflow-y:auto; padding:24px; -webkit-overflow-scrolling:touch; }
-    .bio-header { display:flex; gap:16px; align-items:flex-start; margin-bottom:16px; }
-    .bio-photo { width:128px; height:128px; border-radius:8px; object-fit:cover; flex-shrink:0; }
-    .bio-photo-placeholder { width:128px; height:128px; border-radius:8px; background:#eee; flex-shrink:0; }
-    .bio-name { font-weight:700; font-size:var(--font-xl); margin-top:4px; }
-    .bio-text { font-size:var(--font-sm); line-height:1.6; color:#333; white-space:pre-line; margin-bottom:-0.3em; }
-    .bio-text:empty { display:none; }
-    .bio-empty { font-size:var(--font-sm); color:var(--color-muted); font-style:italic; }
-    .bio-videos { margin-top:16px; }
-    .bio-videos-title { font-size:var(--font-sm); font-weight:600; margin-bottom:10px; color:#111; }
-    .bio-video { display:flex; gap:12px; align-items:flex-start; margin-bottom:10px; text-decoration:none; color:inherit; border-radius:6px; transition:background .15s; padding:4px; margin-left:-4px; margin-right:-4px; }
-    .bio-video:hover { background:#f5f5f5; }
-    .bio-video:last-child { margin-bottom:0; }
-    .bio-video-thumb { width:120px; height:90px; border-radius:4px; object-fit:cover; flex-shrink:0; background:#eee; }
-    .bio-video-info { flex:1; min-width:0; }
-    .bio-video-title { font-size:var(--font-xs); font-weight:600; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-    .bio-video-meta { font-size:var(--font-xs); color:var(--color-muted); margin-top:3px; }
-    @media (max-width:480px) {
-      .bio-box { padding:20px; border-radius:10px; }
-      .bio-photo, .bio-photo-placeholder { width:96px; height:96px; }
-      .bio-name { font-size:var(--font-lg); }
-      .bio-video-thumb { width:96px; height:72px; }
-    }
-
-    /* --- Modals --- */
-    .modal-overlay { display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.4); padding:24px; }
-    .modal-overlay.open { display:flex; justify-content:center; align-items:center; overflow-y:auto; overscroll-behavior:contain; }
-    .modal-box { background:#fff; border-radius:14px; padding:24px; width:420px; max-width:100%; text-align:center; color:#111; box-shadow:0 8px 24px rgba(0,0,0,.12); }
-    .modal-box h3 { margin:0 0 6px; font-size:var(--font-base); font-weight:600; text-wrap:balance; }
-    .modal-box .sub { font-size:var(--font-xs); color:#888; margin:0 0 14px; text-wrap:balance; }
-    .modal-link { display:block; width:100%; background:#f5f5f5; padding:12px 14px; border-radius:8px; font-size:var(--font-sm); font-family:inherit; color:#333; cursor:pointer; transition:background .15s; margin:0; border:none; text-align:left; overflow:hidden; text-overflow:clip; white-space:nowrap; box-sizing:border-box; outline:none; }
-    .modal-link:hover { background:#eee; }
-    .modal-link.copied { background:#d4edda; text-align:center; }
-    .modal-box canvas { display:block; margin:10px auto; border-radius:6px; }
-    .modal-box .or-line { display:flex; align-items:center; gap:10px; margin:10px 0; }
-    .modal-box .or-line hr { flex:1; border:none; border-top:1px solid #e0e0e0; }
-    .modal-box .or-line span { color:#bbb; font-size:var(--font-xs); }
-    .modal-box .tabs { display:flex; gap:3px; margin-bottom:14px; border-radius:8px; border:1px solid #e0e0e0; padding:3px; background:#f5f5f5; }
-    .modal-box .tabs button { flex:1; background:transparent; border:none; padding:7px 4px; cursor:pointer; font-size:var(--font-xs); color:#888; border-radius:5px; transition:color .15s,background .15s; }
-    .modal-box .tabs button:focus-visible { outline:1px solid #111; outline-offset:-2px; }
-    .modal-box .tabs button:focus:not(:focus-visible) { outline:none; }
-    .modal-box .tabs button:hover:not(.on) { background:#eee; color:#555; }
-    .modal-box .tabs button.on { background:#111; color:#fff; }
-    .modal-box .pane { display:none; }
-    .modal-box .pane.on { display:block; }
-    .modal-box .lbl { font-size:var(--font-sm); color:#333; text-align:left; margin:0 0 4px; }
-    .modal-box .recv-lbl { font-size:var(--font-sm); color:#333; text-align:left; margin:10px 0 4px; }
-    .modal-box .steps { counter-reset:s; }
-    .modal-box .steps p { text-align:left; font-size:var(--font-xs); color:#333; margin:5px 0; padding-left:20px; position:relative; }
-    .modal-box .steps p::before { content:counter(s) ". "; counter-increment:s; font-weight:600; position:absolute; left:0; }
-    .pin { display:flex; gap:5px; justify-content:center; margin:10px 0; }
-    .pin span { width:28px; height:36px; font-size:var(--font-lg); font-weight:700; border:1px solid #ddd; border-radius:5px; background:#f5f5f5; color:#111; display:flex; align-items:center; justify-content:center; line-height:1; }
-    .sync-expiry { font-size:var(--font-xs); color:#888; text-align:center; margin:8px 0 0; }
-    .sync-expiry a { color:inherit; text-decoration:underline; cursor:pointer; }
-    .pin-wrap { position:relative; cursor:text; margin:10px 0; -webkit-tap-highlight-color:transparent; }
-    .pin-wrap .pin { pointer-events:none; }
-    .pin-wrap .pin span.active { border-color:#111; background:#fff; }
-    .pin-wrap.focused .pin span.active:empty::after { content:''; width:2px; height:1.2em; background:#111; border-radius:1px; animation:blink 1s step-end infinite; }
-    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
-    .pin-wrap .pin span.filled { color:#111; }
-    .pin-real { position:absolute; inset:0; opacity:0; font-size:16px; width:100%; height:100%; border:none; padding:0; margin:0; -webkit-tap-highlight-color:transparent; }
-    .modal-box .btn { background:#111; color:#fff; border:none; padding:7px 18px; border-radius:5px; cursor:pointer; font-size:var(--font-sm); margin-top:8px; }
-    .modal-box .btn:hover { background:#333; }
-    .modal-box .btn:focus-visible { outline:1px solid #111; outline-offset:2px; }
-    .modal-box .btn:focus:not(:focus-visible) { outline:none; }
-    .qr-wrap { display:block; }
-    @media (max-width:480px) { .qr-wrap { display:none; } .modal-box .tabs { flex-direction:column; } }
     """)
     if has_timetable:
         parts.append("""
     /* --- Timetable view --- */
 
     /* Filter bar */
-    .filter-bar { position: sticky; top: 98px; z-index: 20; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 10px 0 8px; margin: 0.83em 0 8px; gap: 8px; border-bottom: 1px solid #ccc; }
-    .day-tabs { display: flex; gap: 2px; }
-    .period-tabs { display: flex; gap: 2px; }
-    .day-tab, .period-tab { padding: 7px 14px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; color: var(--color-text); cursor: pointer; font-size: var(--font-sm); font-weight: 600; transition: background 0.15s, border-color 0.15s; }
-    .day-tab:hover, .period-tab:hover { background: #eee; }
-    .day-tab.active { background: #111; color: #fff; border-color: #111; }
-    .period-tab.active { background: #333; color: #fff; border-color: #333; }
+    .filter-bar { position: sticky; top: 98px; z-index: 20; background: var(--color-bg); display: flex; align-items: center; justify-content: space-between; padding: 10px 0 8px; margin: 0.83em 0 8px; gap: 8px; border-bottom: 1px solid var(--color-line-hour); }
+    .day-tabs, .period-tabs { display: flex; gap: 2px; }
+    .day-tab, .period-tab { padding: 7px 14px; border: 1px solid #ddd; border-radius: 6px; background: var(--color-surface); color: var(--color-text); cursor: pointer; font-size: var(--font-sm); font-weight: 600; transition: background var(--transition-fast), border-color var(--transition-fast); }
+    .day-tab.active { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
+    .period-tab.active { background: #333; color: var(--color-bg); border-color: #333; }
+    @media (hover: hover) { .day-tab:hover:not(.active), .period-tab:hover:not(.active) { background: var(--color-surface-hover); } }
 
     /* Floor headers */
-    .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: 10; background: #fff; padding: 8px 0 6px; margin: 24px 0 12px; align-items: start; }
-    .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.9) 20%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.5) 55%, rgba(255,255,255,0.15) 78%, rgba(255,255,255,0) 100%); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+    .floor-header-bar { display: grid; position: sticky; top: 148px; z-index: 10; background: var(--color-bg); padding: 8px 0 6px; margin: 24px 0 12px; align-items: start; }
+    .floor-header-bar::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 36px; background: var(--fade-gradient); pointer-events: none; opacity: 0; transition: opacity var(--transition-fast); }
     .floor-header-bar.stuck::after { opacity: 1; }
     .floor-header { text-align: center; margin: 0 3px; background: none !important; }
     .floor-header > span:first-child { display: block; font-weight: 700; font-size: var(--font-sm); padding: 8px 12px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -380,144 +413,125 @@ def render_output_html(
     .timetable-panel.active { display: block; }
     .timetable { display: grid; position: relative; margin-bottom: 4px; }
     .time-label { font-size: var(--font-xs); color: var(--color-muted); text-align: right; padding-right: 8px; line-height: 1; position: relative; top: calc(-0.5em + 1px); }
-    .grid-line { grid-column: 2 / -1; border-top: 1px solid #ccc; pointer-events: none; }
+    .grid-line { grid-column: 2 / -1; pointer-events: none; }
     .grid-line.hour { border-top: 1px solid var(--color-line-hour); }
     .grid-line.half { border-top: 1px dashed var(--color-line-half); }
 
     /* Artist blocks */
-    .tt-block { border-radius: 6px; margin: 5px 3px 4px; padding: 8px 10px; font-size: var(--font-sm); cursor: pointer; position: relative; display: flex; flex-direction: row; align-items: flex-start; border: 1px solid var(--color-border); transition: opacity 0.15s; min-height: 0; }
+    .tt-block { border-radius: 6px; margin: 5px 3px 4px; padding: 8px 10px; font-size: var(--font-sm); cursor: pointer; position: relative; display: flex; flex-direction: row; align-items: flex-start; border: 1px solid var(--color-border); transition: opacity var(--transition-fast); min-height: 0; }
     .tt-text { width: 0; flex-grow: 1; display: flex; flex-direction: column; }
     .tt-block .tt-time-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
     .tt-block .tt-time { font-size: var(--font-sm); color: var(--color-muted); white-space: nowrap; line-height: 1; }
     .tt-artist-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0; }
     .tt-photo-wrap { position: relative; flex-shrink: 0; width: 34px; height: 34px; }
     .tt-photo { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; display: block; }
-    .tt-photo-placeholder { width: 34px; height: 34px; border-radius: 4px; background: #eee; }
+    .tt-photo-placeholder { width: 34px; height: 34px; border-radius: 4px; background: var(--color-surface-hover); }
     .tt-block .tt-name { font-weight: 700; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; min-width: 0; flex: 1; }
 
-    /* Per-artist heart (bottom-right corner inside the photo) */
+    /* Per-artist heart */
     .tt-photo-heart { position: absolute; bottom: -5px; right: -5px; background: rgba(255,255,255,0.85); border: none; cursor: pointer; padding: 2px; line-height: 0; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; z-index: 1; }
-    .tt-photo-heart svg { width: 12px; height: 12px; fill: none; stroke: var(--color-muted-icon); stroke-width: 2; transition: fill 0.15s, stroke 0.15s; }
+    .tt-photo-heart svg { width: 12px; height: 12px; fill: none; stroke: var(--color-muted-icon); stroke-width: 2; transition: fill var(--transition-fast), stroke var(--transition-fast); }
     .tt-photo-heart.active svg { fill: var(--color-accent); stroke: var(--color-accent); }
-    .tt-photo-heart:hover:not(.active) svg { stroke: var(--color-muted-icon); }
 
     /* Calendar icon */
     .tt-cal { background: none; border: none; cursor: pointer; padding: 0; line-height: 0; flex-shrink: 0; }
-    .tt-cal svg { width: 16px; height: 16px; color: var(--color-muted-icon); transition: color 0.15s; }
+    .tt-cal svg { width: 16px; height: 16px; color: var(--color-muted-icon); transition: color var(--transition-fast); }
     .tt-cal.active svg { color: var(--color-schedule); }
-    .tt-cal:hover:not(.active) svg { color: var(--color-muted-icon); }
     .tt-block.scheduled { box-shadow: inset 0 0 0 2px var(--color-schedule); }
-    .tt-ics { position: absolute; bottom: 4px; left: 8px; font-size: var(--font-xs); color: var(--color-muted); cursor: pointer; text-decoration: none; }
-    .tt-ics:hover { color: #555; }
+    .tt-ics { position: absolute; bottom: 4px; left: 8px; font-size: var(--font-xs); color: var(--color-muted); background: none; border: none; cursor: pointer; font: inherit; padding: 0; }
     .filter-schedule .tt-block:not(.scheduled) { opacity: 0.15; }
+    @media (hover: hover) { .tt-ics:hover { color: #555; } }
 
     /* Now line */
-    .now-line { grid-column: 2 / -1; border-top: 2px solid #e53e3e; pointer-events: none; z-index: 8; position: relative; }
-    .now-line::before { content: 'NOW'; position: absolute; left: -48px; top: -8px; font-size: 9px; font-weight: 700; color: #e53e3e; letter-spacing: 0.05em; }
+    .now-line { grid-column: 2 / -1; border-top: 2px solid var(--color-accent); pointer-events: none; z-index: 8; position: relative; }
+    .now-line::before { content: 'NOW'; position: absolute; left: -48px; top: -8px; font-size: var(--font-xs); font-weight: 700; color: var(--color-accent); letter-spacing: 0.05em; }
 
     /* Floor colors */
-    .floor-eisbahn { background: color-mix(in srgb, var(--floor-eisbahn) 88%, transparent); }
-    .floor-grand-hall { background: color-mix(in srgb, var(--floor-grand-hall) 88%, transparent); }
-    .floor-koksofenbatterie { background: color-mix(in srgb, var(--floor-koksofenbatterie) 88%, transparent); }
-    .floor-listening-floor { background: color-mix(in srgb, var(--floor-listening-floor) 88%, transparent); }
-    .floor-mischanlage { background: color-mix(in srgb, var(--floor-mischanlage) 88%, transparent); }
-    .floor-salzlager { background: color-mix(in srgb, var(--floor-salzlager) 88%, transparent); }
-    .floor-werksschwimmbad { background: color-mix(in srgb, var(--floor-werksschwimmbad) 88%, transparent); }
+    .floor-eisbahn { background: rgba(var(--floor-eisbahn), 0.88); }
+    .floor-grand-hall { background: rgba(var(--floor-grand-hall), 0.88); }
+    .floor-koksofenbatterie { background: rgba(var(--floor-koksofenbatterie), 0.88); }
+    .floor-listening-floor { background: rgba(var(--floor-listening-floor), 0.88); }
+    .floor-mischanlage { background: rgba(var(--floor-mischanlage), 0.88); }
+    .floor-salzlager { background: rgba(var(--floor-salzlager), 0.88); }
+    .floor-werksschwimmbad { background: rgba(var(--floor-werksschwimmbad), 0.88); }
     .floor-unknown { background: rgba(243, 244, 246, 0.88); }
-    .floor-header.floor-eisbahn > span:first-child { background: var(--floor-eisbahn); }
-    .floor-header.floor-grand-hall > span:first-child { background: var(--floor-grand-hall); }
-    .floor-header.floor-koksofenbatterie > span:first-child { background: var(--floor-koksofenbatterie); }
-    .floor-header.floor-listening-floor > span:first-child { background: var(--floor-listening-floor); }
-    .floor-header.floor-mischanlage > span:first-child { background: var(--floor-mischanlage); }
-    .floor-header.floor-salzlager > span:first-child { background: var(--floor-salzlager); }
-    .floor-header.floor-werksschwimmbad > span:first-child { background: var(--floor-werksschwimmbad); }
+    .floor-header.floor-eisbahn > span:first-child { background: rgb(var(--floor-eisbahn)); }
+    .floor-header.floor-grand-hall > span:first-child { background: rgb(var(--floor-grand-hall)); }
+    .floor-header.floor-koksofenbatterie > span:first-child { background: rgb(var(--floor-koksofenbatterie)); }
+    .floor-header.floor-listening-floor > span:first-child { background: rgb(var(--floor-listening-floor)); }
+    .floor-header.floor-mischanlage > span:first-child { background: rgb(var(--floor-mischanlage)); }
+    .floor-header.floor-salzlager > span:first-child { background: rgb(var(--floor-salzlager)); }
+    .floor-header.floor-werksschwimmbad > span:first-child { background: rgb(var(--floor-werksschwimmbad)); }
 
     /* Mobile table — hidden on desktop */
     .tt-table-wrap { display: none; }
 
     /* Artist detail popup */
-    .tt-popup { position: fixed; z-index: 200; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 16px; width: 320px; max-width: 90vw; visibility: hidden; opacity: 0; pointer-events: none; }
+    .tt-popup { position: fixed; z-index: 200; background: var(--color-bg); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 16px; width: 320px; max-width: 90vw; visibility: hidden; opacity: 0; pointer-events: none; }
     .tt-popup.open { visibility: visible; opacity: 1; pointer-events: auto; }
     .tt-popup .popup-meta { font-size: var(--font-xs); color: var(--color-muted); margin-bottom: 10px; }
     .tt-popup .popup-artist { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
     .tt-popup .popup-artist:last-child { margin-bottom: 0; }
     .tt-popup .popup-photo { width: 80px; height: 80px; border-radius: 6px; object-fit: cover; flex-shrink: 0; margin-top: 2px; }
-    .tt-popup .popup-photo-placeholder { width: 80px; height: 80px; border-radius: 6px; background: #eee; flex-shrink: 0; margin-top: 2px; }
+    .tt-popup .popup-photo-placeholder { width: 80px; height: 80px; border-radius: 6px; background: var(--color-surface-hover); flex-shrink: 0; margin-top: 2px; }
     .tt-popup .popup-name { font-weight: 700; font-size: var(--font-base); }
-    .tt-popup .links { display: flex; flex-wrap: wrap; column-gap: 24px; row-gap: 0; margin-top: 8px; }
-    .tt-popup .links a { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: #555; font-size: var(--font-xs); }
-    .tt-popup .links a:hover { color: #111; }
+    .tt-popup .links { column-gap: 24px; row-gap: 0; margin-top: 8px; }
+    .tt-popup .links a { gap: 4px; }
+    @media (hover: hover) { .tt-popup .links a:hover { color: var(--color-text); } }
 
+    /* Tablet (768px) */
     @media (max-width: 768px) {
       .floor-header > span:first-child { font-size: var(--font-xs); padding: 6px 2px; }
       .tt-block { font-size: var(--font-xs); padding: 6px 7px; margin: 2px; gap: 5px; }
       .day-tab { padding: 6px 10px; font-size: var(--font-xs); }
     }
 
-    /* Hamburger menu (hidden on desktop) */
-    .hamburger { display: none; }
-    .view-label { display: none; }
-    .cmd-dropdown { display: none; }
-    .menu-overlay { display: none; }
-
+    /* Mobile timetable (480px) */
     @media (max-width: 480px) {
-      body { padding: 0 12px; }
-      h1 { font-size: var(--font-xl); padding: 8px 0 6px; top: 48px; margin-bottom: 0; }
+      h1 { margin-bottom: 0; }
 
-      /* Mobile cmd bar — 48px, full width, label left, hamburger right */
-      .cmd-bar { height: 48px; padding: 0 16px; margin-left: -12px; margin-right: -12px; }
+      .cmd-bar { height: 48px; padding: 0 16px; margin-left: -12px; margin-right: -12px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
       .cmd-bar .cmd-group { display: none; }
       .cmd-bar .cmd-group-right { display: none !important; }
       .cmd-sep { display: none; }
-
-      /* View label — left aligned, 16px */
-      .cmd-bar { cursor: pointer; -webkit-tap-highlight-color: transparent; }
       .cmd-bar .view-label { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: center; height: 100%; }
 
-      /* Hamburger — 48x48 tap target, 28px SVG */
       .hamburger { display: flex; align-items: center; justify-content: center; background: none; color: #fff; border: none; cursor: pointer; width: 48px; height: 48px; position: absolute; right: 4px; top: 0; -webkit-tap-highlight-color: transparent; }
       .hamburger svg { width: 24px; height: 24px; min-width: 24px; min-height: 24px; }
 
-      /* Dropdown — full width, same bg as bar, 16px font matching label */
       .cmd-dropdown { position: fixed; top: 48px; left: 0; right: 0; z-index: 49; background: #111; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
       .cmd-dropdown.open { display: flex; }
       .cmd-dropdown button { background: none; color: #aaa; border: none; border-top: 1px solid #222; cursor: pointer; padding: 16px; font-size: 16px; font-family: inherit; text-align: left; -webkit-tap-highlight-color: transparent; }
       .cmd-dropdown button:active { background: #222; }
       .cmd-dropdown button.active { color: #fff; font-weight: 600; }
 
-      /* Overlay behind dropdown (below hamburger) */
       .menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
 
-      /* Photos bigger on mobile single-floor view */
       .tt-photo, .tt-photo-placeholder { width: 30px; height: 30px; border-radius: 4px; }
 
-      /* Hide CSS grid timetable on mobile — replaced by table */
       .floor-header-bar { display: none !important; }
       .timetable { display: none !important; }
-
-      /* Show mobile table */
       .tt-table-wrap { display: block !important; min-height: 300px; }
 
-      /* Single scroll container for both axes */
       .tt-v-scroll { overflow: auto; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: none; }
       .tt-v-scroll::-webkit-scrollbar { display: none; }
 
       .tt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: calc(40px + var(--num-floors) * 40vw); }
-      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: #fff; padding: 4px 2px 4px; text-align: center; vertical-align: top; }
-      .tt-table thead th:first-child { left: 0; z-index: 3; background: #fff; width: 40px; min-width: 40px; }
+      .tt-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-bg); padding: 4px 2px; text-align: center; vertical-align: top; }
+      .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: 999px; font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
-      .tt-floor-th .floor-curator { display: block; font-size: 10px; padding: 1px 0 2px; margin: 0; }
-      .tt-floor-th.floor-eisbahn > span:first-child { background: var(--floor-eisbahn); }
-      .tt-floor-th.floor-grand-hall > span:first-child { background: var(--floor-grand-hall); }
-      .tt-floor-th.floor-koksofenbatterie > span:first-child { background: var(--floor-koksofenbatterie); }
-      .tt-floor-th.floor-listening-floor > span:first-child { background: var(--floor-listening-floor); }
-      .tt-floor-th.floor-mischanlage > span:first-child { background: var(--floor-mischanlage); }
-      .tt-floor-th.floor-salzlager > span:first-child { background: var(--floor-salzlager); }
-      .tt-floor-th.floor-werksschwimmbad > span:first-child { background: var(--floor-werksschwimmbad); }
-      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: #fff; font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
+      .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
+      .tt-floor-th.floor-eisbahn > span:first-child { background: rgb(var(--floor-eisbahn)); }
+      .tt-floor-th.floor-grand-hall > span:first-child { background: rgb(var(--floor-grand-hall)); }
+      .tt-floor-th.floor-koksofenbatterie > span:first-child { background: rgb(var(--floor-koksofenbatterie)); }
+      .tt-floor-th.floor-listening-floor > span:first-child { background: rgb(var(--floor-listening-floor)); }
+      .tt-floor-th.floor-mischanlage > span:first-child { background: rgb(var(--floor-mischanlage)); }
+      .tt-floor-th.floor-salzlager > span:first-child { background: rgb(var(--floor-salzlager)); }
+      .tt-floor-th.floor-werksschwimmbad > span:first-child { background: rgb(var(--floor-werksschwimmbad)); }
+      .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: var(--color-bg); font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
       .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
-      .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; vertical-align: top; padding: 0; position: relative; }
+      .tt-table tbody td:not(.tt-time-td) { width: 40vw; min-width: 40vw; position: relative; }
       .tt-table tbody tr { height: var(--row-h); }
       .tt-table tbody tr:first-child { height: calc(var(--row-h) / 2); }
       .tt-table tbody tr:first-child td.tt-time-td { padding-bottom: calc(var(--row-h) / 2); }
@@ -530,14 +544,11 @@ def render_output_html(
         background-position: 0 calc(var(--row-h) / 2 - 1px);
       }
 
-      /* Artist blocks inside table cells */
       .tt-table .tt-block { position: absolute; top: 1.5px; left: 1px; right: 1px; bottom: 2.5px; }
 
-      /* Filter bar compact */
       .filter-bar { padding: 6px 0; margin: 0 0 4px; top: 100px; }
       .day-tab, .period-tab { padding: 5px 10px; font-size: var(--font-xs); }
 
-      /* Popup full width on mobile */
       .tt-popup { width: calc(100vw - 24px); max-width: none; left: 12px !important; }
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
     }
@@ -547,7 +558,7 @@ def render_output_html(
     parts.append("<body>")
     heart_path = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
     cal_inner = '<rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/>'
-    parts.append('  <svg style="display:none">')
+    parts.append('  <svg aria-hidden="true" style="display:none">')
     parts.append(
         f'    <symbol id="i-heart" viewBox="0 0 24 24"><path d="{heart_path}"/></symbol>'
     )
@@ -559,71 +570,75 @@ def render_output_html(
     parts.append(f"    {_svg_to_symbol(SVG_YT, 'i-yt')}")
     parts.append(f"    {_svg_to_symbol(SVG_RA, 'i-ra')}")
     parts.append("  </svg>")
-    parts.append('  <div class="cmd-bar" id="cmd-bar">')
+    parts.append('  <nav class="cmd-bar" id="cmd-bar" aria-label="Main navigation">')
     parts.append('    <span class="view-label" id="view-label">Line-up</span>')
     parts.append('    <div class="cmd-group">')
     if has_timetable:
         parts.append(
-            '      <button onmousedown="this.blur()" onclick="switchView(\'list\', this)" id="btn-list" class="active view-btn">Line-up</button>'
+            '      <button type="button" onmousedown="this.blur()" onclick="switchView(\'list\', this)" id="btn-list" class="active view-btn">Line-up</button>'
         )
         parts.append(
-            '      <button onmousedown="this.blur()" onclick="switchView(\'timetable\', this)" id="btn-timetable" class="view-btn">Timetable</button>'
+            '      <button type="button" onmousedown="this.blur()" onclick="switchView(\'timetable\', this)" id="btn-timetable" class="view-btn">Timetable</button>'
         )
         parts.append('      <span class="cmd-sep"></span>')
     parts.append(
-        '      <button onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">Show My Picks</button>'
+        '      <button type="button" onmousedown="this.blur()" onclick="toggleFilter(this)" id="btn-filter">Show My Picks</button>'
     )
     if has_timetable:
         parts.append(
-            '      <button onmousedown="this.blur()" onclick="toggleScheduleFilter(this)" id="btn-schedule" style="display:none">Show My Schedule</button>'
+            '      <button type="button" onmousedown="this.blur()" onclick="toggleScheduleFilter(this)" id="btn-schedule" style="display:none">Show My Schedule</button>'
         )
     parts.append("    </div>")
     parts.append('    <div class="cmd-group cmd-group-right">')
     parts.append(
-        '      <button onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
+        '      <button type="button" onmousedown="this.blur()" onclick="openShareModal()">Share</button>'
     )
     parts.append(
-        '      <button onmousedown="this.blur()" onclick="openSyncModal()">Sync</button>'
+        '      <button type="button" onmousedown="this.blur()" onclick="openSyncModal()">Sync</button>'
     )
     parts.append(
-        '      <button onmousedown="this.blur()" onclick="toggleNotifications()" id="btn-bell" '
+        '      <button type="button" onmousedown="this.blur()" onclick="toggleNotifications()" id="btn-bell" '
         'aria-label="Notifications">'
         '<svg width="14" height="14" style="position:relative;top:1px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>'
-        '<script>document.getElementById("btn-bell").className=localStorage.getItem("stc_push")==="1"?"active":""</script>'
     )
     parts.append("    </div>")
     parts.append(
-        '    <button class="hamburger" onclick="toggleMenu()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>'
+        '    <button type="button" class="hamburger" onclick="toggleMenu()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>'
     )
-    parts.append("  </div>")
+    parts.append("  </nav>")
 
-    # Hamburger dropdown menu
+    # Hamburger dropdown menu (fixed-positioned, outside nav)
     parts.append('  <div class="cmd-dropdown" id="cmd-dropdown">')
     if has_timetable:
         parts.append(
-            "    <button onclick=\"switchView('list', document.getElementById('btn-list')); closeMenu()\" id=\"dd-list\">Line-up</button>"
+            '    <button type="button" onclick="switchView(\'list\', document.getElementById(\'btn-list\')); closeMenu()" id="dd-list">Line-up</button>'
         )
         parts.append(
-            "    <button onclick=\"switchView('timetable', document.getElementById('btn-timetable')); closeMenu()\" id=\"dd-timetable\">Timetable</button>"
+            '    <button type="button" onclick="switchView(\'timetable\', document.getElementById(\'btn-timetable\')); closeMenu()" id="dd-timetable">Timetable</button>'
         )
     parts.append(
-        '    <button onclick="toggleFilter(document.getElementById(\'btn-filter\')); closeMenu()" id="dd-filter">Show My Picks</button>'
+        '    <button type="button" onclick="toggleFilter(document.getElementById(\'btn-filter\')); closeMenu()" id="dd-filter">Show My Picks</button>'
     )
     if has_timetable:
         parts.append(
-            '    <button onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\')); closeMenu()" id="dd-schedule" style="display:none">Show My Schedule</button>'
+            '    <button type="button" onclick="toggleScheduleFilter(document.getElementById(\'btn-schedule\')); closeMenu()" id="dd-schedule" style="display:none">Show My Schedule</button>'
         )
-    parts.append('    <button onclick="openShareModal(); closeMenu()">Share</button>')
-    parts.append('    <button onclick="openSyncModal(); closeMenu()">Sync</button>')
     parts.append(
-        '    <button onclick="toggleNotifications(); closeMenu()" id="dd-bell">Notifications</button>'
+        '    <button type="button" onclick="openShareModal(); closeMenu()">Share</button>'
+    )
+    parts.append(
+        '    <button type="button" onclick="openSyncModal(); closeMenu()">Sync</button>'
+    )
+    parts.append(
+        '    <button type="button" onclick="toggleNotifications(); closeMenu()" id="dd-bell">Notifications</button>'
     )
     parts.append("  </div>")
     parts.append(
         '  <div class="menu-overlay" id="menu-overlay" onclick="closeMenu()"></div>'
     )
 
+    parts.append("  <main>")
     parts.append(f"  <h1>{esc(title)}</h1>")
 
     # Share modal
@@ -636,7 +651,7 @@ def render_output_html(
         '      <p class="sub" style="color:inherit">Friends can view your picks and schedule. Click the link to copy it.</p>'
     )
     parts.append(
-        '      <input type="text" readonly class="modal-link" id="share-link">'
+        '      <input type="text" readonly class="modal-link" id="share-link" aria-label="Share link">'
     )
     parts.append("    </div>")
     parts.append("  </div>")
@@ -697,7 +712,7 @@ def render_output_html(
     parts.append(
         f'        <div class="pin-wrap" id="pin-wrap">'
         f'<div class="pin" id="pin-boxes">{pin_spans}</div>'
-        f'<input class="pin-real" id="pin-input" type="text" inputmode="numeric" maxlength="6" autocomplete="off"/>'
+        f'<input class="pin-real" id="pin-input" type="text" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Enter sync PIN">'
         f"</div>"
     )
     parts.append(
@@ -793,7 +808,7 @@ def render_output_html(
 
     # Bio overlay
     parts.append(
-        '  <div class="modal-overlay" id="m-bio" role="dialog" aria-modal="true">'
+        '  <div class="modal-overlay" id="m-bio" role="dialog" aria-modal="true" aria-labelledby="bio-name">'
     )
     parts.append('    <div class="modal-box bio-box">')
     parts.append('      <div class="bio-scroll">')
@@ -838,13 +853,13 @@ def render_output_html(
         )
         if photo_local:
             parts.append(
-                f'        <img class="artist-photo" src="photos/{esc(photo_local)}" alt="{esc(name)}" width="120" height="120" loading="lazy" onclick="openBio(this)">'
+                f'        <img class="artist-photo" src="photos/{esc(photo_local)}" alt="{esc(name)}" width="120" height="120" loading="lazy" tabindex="0" role="button" onclick="openBio(this)" onkeydown="if(event.key===\'Enter\')openBio(this)">'
             )
         else:
             parts.append('        <div class="photo-placeholder"></div>')
         parts.append('        <div class="artist-info">')
         parts.append(
-            f'        <span class="artist-name" onclick="openBio(this)">{esc(name)}</span>'
+            f'        <span class="artist-name" tabindex="0" role="button" onclick="openBio(this)" onkeydown="if(event.key===\'Enter\')openBio(this)">{esc(name)}</span>'
         )
         if sched_main:
             parts.append(
@@ -994,9 +1009,11 @@ def render_output_html(
                 if oid in artist_videos:
                     entry["videos"] = artist_videos[oid]
                 bio_lookup[oid] = entry
-    parts.append(
-        f"  <script>var ARTIST_BIOS={_json.dumps(bio_lookup, separators=(',', ':'))};</script>"
-    )
+    if output_dir:
+        bios_path = Path(output_dir) / "bios.json"
+        bios_path.write_text(
+            _json.dumps(bio_lookup, separators=(",", ":")), encoding="utf-8"
+        )
 
     # --- Timetable view ---
     if has_timetable:
@@ -1075,7 +1092,8 @@ def render_output_html(
         row_h = 14 if needs_large_rows else 10
 
         artist_lookup: dict[str, list[dict]] = {}
-        parts.append(f"  <style>.tt-table {{ --row-h: {row_h}px; }}</style>")
+        style_idx = next(i for i, p in enumerate(parts) if p.strip() == "</style>")
+        parts.insert(style_idx, f"    .tt-table {{ --row-h: {row_h}px; }}")
         parts.append('  <div id="timetable-view" style="display:none">')
 
         # Filter bar (day/period tabs)
@@ -1213,7 +1231,7 @@ def render_output_html(
                         f'aria-label="Add to schedule" aria-pressed="false">{cal_svg}</button>'
                     )
                     parts.append(
-                        f'      <div class="tt-block floor-{esc(fid)}" style="grid-column: {col}; grid-row: {row_start} / {row_end};" {data_attrs}>'
+                        f'      <div class="tt-block floor-{esc(fid)}" tabindex="0" role="button" style="grid-column: {col}; grid-row: {row_start} / {row_end};" {data_attrs}>'
                         f'<div class="tt-text">'
                         f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
                     )
@@ -1224,11 +1242,11 @@ def render_output_html(
                         a_card_key = f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{loc_for_id}"
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
                         if photo_local:
-                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="" loading="lazy">'
+                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="{esc(name)}" loading="lazy">'
                         else:
                             photo_el = '<div class="tt-photo-placeholder"></div>'
                         heart_btn = (
-                            f'<button class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
+                            f'<button type="button" class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
                             f'aria-label="Add to favorites" aria-pressed="false">{heart_svg}</button>'
                         )
                         parts.append(
@@ -1237,7 +1255,7 @@ def render_output_html(
                             f'<span class="tt-name">{esc(name)}</span></div>'
                         )
                     parts.append(
-                        '<a class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</a>'
+                        '<button type="button" class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</button>'
                         "</div></div>"
                     )
 
@@ -1334,7 +1352,7 @@ def render_output_html(
 
                     block_parts: list[str] = []
                     block_parts.append(
-                        f'<div class="tt-block floor-{esc(fid)}" {data_attrs}>'
+                        f'<div class="tt-block floor-{esc(fid)}" tabindex="0" role="button" {data_attrs}>'
                         f'<div class="tt-text">'
                         f'<div class="tt-time-row"><span class="tt-time">{esc(s_display)}–{esc(e_display)}</span>{cal_btn}</div>'
                     )
@@ -1345,11 +1363,11 @@ def render_output_html(
                         a_card_key = f"{a.get('overlay_id', '')}:{tt_date_str}:{period}:{loc_for_id}"
                         a_artist_id = str(uuid.uuid5(uuid.NAMESPACE_URL, a_card_key))
                         if photo_local:
-                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="" loading="lazy">'
+                            photo_el = f'<img class="tt-photo" src="{esc(photos_prefix + photo_local)}" alt="{esc(name)}" loading="lazy">'
                         else:
                             photo_el = '<div class="tt-photo-placeholder"></div>'
                         heart_btn = (
-                            f'<button class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
+                            f'<button type="button" class="tt-photo-heart" onclick="event.stopPropagation(); toggleHeart(this)" '
                             f'aria-label="Add to favorites" aria-pressed="false">{heart_svg}</button>'
                         )
                         block_parts.append(
@@ -1358,7 +1376,7 @@ def render_output_html(
                             f'<span class="tt-name">{esc(name)}</span></div>'
                         )
                     block_parts.append(
-                        '<a class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</a>'
+                        '<button type="button" class="tt-ics" onclick="event.stopPropagation(); downloadICS(this.closest(\'[data-ics-start]\'))">Add to calendar</button>'
                         "</div></div>"
                     )
                     block_html = "".join(block_parts)
@@ -1429,7 +1447,9 @@ def render_output_html(
             parts.append("  </div>")  # .timetable-panel
 
         # Artist detail popup
-        parts.append('  <div class="tt-popup" id="tt-popup">')
+        parts.append(
+            '  <div class="tt-popup" id="tt-popup" role="dialog" aria-label="Artist details">'
+        )
         parts.append('    <div class="popup-meta" id="popup-meta"></div>')
         parts.append('    <div id="popup-artists"></div>')
         parts.append("  </div>")
@@ -1825,7 +1845,7 @@ def render_output_html(
       if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
       pinField.value = '';
       syncPinDisplay();
-      if (_modalTrigger) { _modalTrigger.blur(); _modalTrigger = null; }
+      if (_modalTrigger) { _modalTrigger.focus(); _modalTrigger = null; }
     }
     document.querySelectorAll('.modal-overlay').forEach(ov => {
       ov.addEventListener('click', e => { if (e.target === ov) closeDialog(ov.id); });
@@ -1989,12 +2009,21 @@ def render_output_html(
       if (n >= 1000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'K';
       return String(n);
     }
-    function openBio(el) {
+    var _biosCache = null;
+    async function _loadBios() {
+      if (_biosCache) return _biosCache;
+      try {
+        const res = await fetch('bios.json');
+        _biosCache = await res.json();
+      } catch { _biosCache = {}; }
+      return _biosCache;
+    }
+    async function openBio(el) {
       const li = el.closest('.artist-item');
       if (!li) return;
       const oid = li.dataset.oid;
-      const data = ARTIST_BIOS[oid];
-      if (!data) return;
+      const bios = await _loadBios();
+      const data = bios[oid] || { name: li.querySelector('.artist-name,.tt-name')?.textContent || '', photo: '', bio: '' };
       const photoEl = document.getElementById('bio-photo');
       if (data.photo) {
         photoEl.outerHTML = '<img class="bio-photo" id="bio-photo" src="' + data.photo + '" alt="' + data.name + '">';
@@ -2504,6 +2533,7 @@ def render_output_html(
     }
     """)
     parts.append("  </script>")
+    parts.append("  </main>")
     parts.append("</body>")
     parts.append("</html>")
     return "\n".join(parts)

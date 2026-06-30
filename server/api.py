@@ -904,6 +904,14 @@ async def serve_sw():
     raise HTTPException(404, "Not found")
 
 
+@app.get("/bios.json")
+async def serve_bios():
+    file_path = STATIC_DIR / "bios.json"
+    if file_path.exists():
+        return FileResponse(file_path, media_type="application/json")
+    raise HTTPException(404, "Not found")
+
+
 @app.get("/{path:path}")
 async def serve_index(path: str):
     file_path = STATIC_DIR / "index.html"
