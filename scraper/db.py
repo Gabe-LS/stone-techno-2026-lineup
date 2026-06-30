@@ -18,6 +18,8 @@ OVERRIDE_ALIASES = {"photo": "photo_url"}
 
 
 def init_db(db: sqlite3.Connection) -> None:
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA foreign_keys=ON")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS artists (
             id                TEXT PRIMARY KEY,
