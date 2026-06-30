@@ -1825,8 +1825,14 @@ def render_output_html(
       const bh = box.offsetHeight;
       box.style.transform = 'translateY(' + (ot + (vh - bh) / 2 - (window.innerHeight - bh) / 2) + 'px)';
     }
+    var _savedScrollY = 0;
     function openDialog(id) {
       _modalTrigger = document.activeElement;
+      _savedScrollY = window.scrollY;
+      document.body.style.position = 'fixed';
+      document.body.style.top = '-' + _savedScrollY + 'px';
+      document.body.style.left = '0';
+      document.body.style.right = '0';
       document.getElementById(id).classList.add('open');
       if (window.visualViewport) {
         visualViewport.addEventListener('resize', _fitToViewport);
@@ -1842,6 +1848,11 @@ def render_output_html(
       m.classList.remove('open');
       const box = m.querySelector('.modal-box');
       box.style.transform = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      window.scrollTo(0, _savedScrollY);
       if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
       pinField.value = '';
       syncPinDisplay();
