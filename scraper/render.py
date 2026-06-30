@@ -95,6 +95,7 @@ def _artists_json(group: list[dict], photos_prefix: str) -> str:
     return _json.dumps(
         [
             {
+                "oid": a.get("id", ""),
                 "name": a.get("name", ""),
                 "photo": photos_prefix + a["photo_file"] if a.get("photo_file") else "",
                 "links": [
@@ -2016,12 +2017,9 @@ def render_output_html(
       } catch { _biosCache = {}; }
       return _biosCache;
     }
-    async function openBio(el) {
-      const li = el.closest('.artist-item');
-      if (!li) return;
-      const oid = li.dataset.oid;
+    async function openBioById(oid, fallbackName) {
       const bios = await _loadBios();
-      const data = bios[oid] || { name: li.querySelector('.artist-name,.tt-name')?.textContent || '', photo: '', bio: '' };
+      const data = bios[oid] || { name: fallbackName || '', photo: '', bio: '' };
       const photoEl = document.getElementById('bio-photo');
       if (data.photo) {
         photoEl.outerHTML = '<img class="bio-photo" id="bio-photo" src="' + data.photo + '" alt="' + data.name + '">';
@@ -2054,6 +2052,11 @@ def render_output_html(
       }
       openDialog('m-bio');
       document.querySelector('.bio-scroll').scrollTop = 0;
+    }
+    async function openBio(el) {
+      const li = el.closest('.artist-item');
+      if (!li) return;
+      openBioById(li.dataset.oid, li.querySelector('.artist-name,.tt-name')?.textContent);
     }
 
     // Hamburger menu
@@ -2363,15 +2366,16 @@ def render_output_html(
           document.getElementById('popup-meta').textContent = d.time + ' \\u00b7 ' + d.floor;
           let artistsHtml = '';
           artists.forEach(a => {
+            const bioClick = 'event.stopPropagation(); closePopup(); openBioById(\\'' + a.oid + '\\', \\'' + a.name.replace(/'/g, "\\\\'") + '\\')';
             const photo = a.photo
-              ? '<img class="popup-photo" src="' + a.photo + '" alt="' + a.name + '">'
+              ? '<img class="popup-photo" src="' + a.photo + '" alt="' + a.name + '" style="cursor:pointer" onclick="' + bioClick + '">'
               : '<div class="popup-photo-placeholder"></div>';
             let links = '';
             (a.links || []).forEach(function(l) {
               var svg = PLATFORM_SVG[l.p] || '';
               if (svg) links += _popupLink(l.u, svg, l.f || '');
             });
-            artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name">' + a.name + '</div><div class="links">' + links + '</div></div></div>';
+            artistsHtml += '<div class="popup-artist">' + photo + '<div><div class="popup-name" style="cursor:pointer" onclick="' + bioClick + '">' + a.name + '</div><div class="links">' + links + '</div></div></div>';
           });
           document.getElementById('popup-artists').innerHTML = artistsHtml;
           popup.style.left = '-9999px';
