@@ -145,6 +145,23 @@ def _format_artist_schedule(
     return current_label, also_label
 
 
+def _render_markdown(text: str) -> str:
+    import markdown as _md
+    import re as _re
+
+    result = _md.markdown(text, extensions=["nl2br"])
+    result = _re.sub(
+        r"<(script|iframe|object|embed|form)[^>]*>.*?</\1>",
+        "",
+        result,
+        flags=_re.DOTALL | _re.IGNORECASE,
+    )
+    result = _re.sub(
+        r"<(script|iframe|object|embed|form)[^>]*/?>", "", result, flags=_re.IGNORECASE
+    )
+    return result.strip()
+
+
 def render_output_html(
     title: str,
     ordered_sections: list[dict],
@@ -153,6 +170,7 @@ def render_output_html(
     has_timetable: bool = False,
     photos_prefix: str = "photos/",
     floor_curators: dict[str, str] | None = None,
+    floor_colors: dict[str, str] | None = None,
     output_dir: str | None = None,
     videos: dict[str, list[dict]] | None = None,
 ) -> str:
@@ -216,13 +234,6 @@ def render_output_html(
       --color-schedule: #4a90d9;
       --color-line-hour: #ccc;
       --color-line-half: #e8e8e8;
-      --floor-eisbahn: 198, 249, 197;
-      --floor-grand-hall: 197, 249, 241;
-      --floor-koksofenbatterie: 197, 213, 249;
-      --floor-listening-floor: 226, 197, 249;
-      --floor-mischanlage: 249, 197, 228;
-      --floor-salzlager: 249, 211, 197;
-      --floor-werksschwimmbad: 243, 249, 197;
       --font-2xl: 2em;
       --font-xl: 1.5em;
       --font-lg: 1.125em;
@@ -296,7 +307,12 @@ def render_output_html(
     .bio-photo { width: 128px; height: 128px; border-radius: var(--radius-card); object-fit: cover; flex-shrink: 0; }
     .bio-photo-placeholder { width: 128px; height: 128px; border-radius: var(--radius-card); background: var(--color-surface-hover); flex-shrink: 0; }
     .bio-name { font-weight: 700; font-size: var(--font-xl); margin-top: 4px; }
-    .bio-text { font-size: var(--font-sm); line-height: 1.6; color: #333; white-space: pre-line; }
+    .bio-text { font-size: var(--font-sm); line-height: 1.6; color: #333; }
+    .bio-text p { margin: 0 0 0.6em; }
+    .bio-text p:last-child { margin-bottom: 0; }
+    .bio-text ul, .bio-text ol { margin: 0.4em 0; padding-left: 1.4em; }
+    .bio-text strong { font-weight: 600; }
+    .bio-text a { color: inherit; text-decoration: underline; }
     .bio-text:empty { display: none; }
     .bio-empty { font-size: var(--font-sm); color: var(--color-muted); font-style: italic; }
     .bio-videos { margin-top: 16px; }
@@ -447,22 +463,8 @@ def render_output_html(
     .now-line { grid-column: 2 / -1; border-top: 2px solid var(--color-accent); pointer-events: none; z-index: 8; position: relative; }
     .now-line::before { content: 'NOW'; position: absolute; left: -48px; top: -8px; font-size: var(--font-xs); font-weight: 700; color: var(--color-accent); letter-spacing: 0.05em; }
 
-    /* Floor colors */
-    .floor-eisbahn { background: rgba(var(--floor-eisbahn), 0.88); }
-    .floor-grand-hall { background: rgba(var(--floor-grand-hall), 0.88); }
-    .floor-koksofenbatterie { background: rgba(var(--floor-koksofenbatterie), 0.88); }
-    .floor-listening-floor { background: rgba(var(--floor-listening-floor), 0.88); }
-    .floor-mischanlage { background: rgba(var(--floor-mischanlage), 0.88); }
-    .floor-salzlager { background: rgba(var(--floor-salzlager), 0.88); }
-    .floor-werksschwimmbad { background: rgba(var(--floor-werksschwimmbad), 0.88); }
+    /* Floor colors — generated dynamically */
     .floor-unknown { background: rgba(243, 244, 246, 0.88); }
-    .floor-header.floor-eisbahn > span:first-child { background: rgb(var(--floor-eisbahn)); }
-    .floor-header.floor-grand-hall > span:first-child { background: rgb(var(--floor-grand-hall)); }
-    .floor-header.floor-koksofenbatterie > span:first-child { background: rgb(var(--floor-koksofenbatterie)); }
-    .floor-header.floor-listening-floor > span:first-child { background: rgb(var(--floor-listening-floor)); }
-    .floor-header.floor-mischanlage > span:first-child { background: rgb(var(--floor-mischanlage)); }
-    .floor-header.floor-salzlager > span:first-child { background: rgb(var(--floor-salzlager)); }
-    .floor-header.floor-werksschwimmbad > span:first-child { background: rgb(var(--floor-werksschwimmbad)); }
 
     /* Mobile table — hidden on desktop */
     .tt-table-wrap { display: none; }
@@ -522,13 +524,7 @@ def render_output_html(
       .tt-table thead th:first-child { left: 0; z-index: 3; background: var(--color-bg); width: 40px; min-width: 40px; }
       .tt-floor-th > span:first-child { display: block; padding: 6px 10px; border-radius: 999px; font-size: var(--font-xs); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 3px; }
       .tt-floor-th .floor-curator { display: block; font-size: var(--font-xs); padding: 1px 0 2px; margin: 0; }
-      .tt-floor-th.floor-eisbahn > span:first-child { background: rgb(var(--floor-eisbahn)); }
-      .tt-floor-th.floor-grand-hall > span:first-child { background: rgb(var(--floor-grand-hall)); }
-      .tt-floor-th.floor-koksofenbatterie > span:first-child { background: rgb(var(--floor-koksofenbatterie)); }
-      .tt-floor-th.floor-listening-floor > span:first-child { background: rgb(var(--floor-listening-floor)); }
-      .tt-floor-th.floor-mischanlage > span:first-child { background: rgb(var(--floor-mischanlage)); }
-      .tt-floor-th.floor-salzlager > span:first-child { background: rgb(var(--floor-salzlager)); }
-      .tt-floor-th.floor-werksschwimmbad > span:first-child { background: rgb(var(--floor-werksschwimmbad)); }
+      /* Floor colors for mobile table — generated dynamically */
       .tt-table tbody td.tt-time-td { position: sticky; left: 0; z-index: 1; background: var(--color-bg); font-size: var(--font-xs); color: var(--color-muted-icon); text-align: right; padding: 0 6px 0 0; vertical-align: top; width: 40px; min-width: 40px; line-height: var(--row-h); overflow: hidden; }
       .tt-table tbody td.tt-line-hour, .tt-table tbody td.tt-line-half { vertical-align: middle; }
       .tt-table tbody td { vertical-align: top; padding: 0; }
@@ -554,6 +550,21 @@ def render_output_html(
       .tt-popup .popup-photo, .tt-popup .popup-photo-placeholder { width: 64px; height: 64px; }
     }
     """)
+    _fc = floor_colors or {}
+    if _fc:
+        color_css: list[str] = []
+        color_css.append("    /* Floor colors (from DB) */")
+        for fid, rgb in _fc.items():
+            color_css.append(
+                f"    .floor-{esc(fid)} {{ background: rgba({rgb}, 0.88); }}"
+            )
+            color_css.append(
+                f"    .floor-header.floor-{esc(fid)} > span:first-child {{ background: rgb({rgb}); }}"
+            )
+            color_css.append(
+                f"    .tt-floor-th.floor-{esc(fid)} > span:first-child {{ background: rgb({rgb}); }}"
+            )
+        parts.append("\n".join(color_css))
     parts.append("  </style>")
     parts.append("</head>")
     parts.append("<body>")
@@ -999,7 +1010,7 @@ def render_output_html(
                     "photo": f"photos/{a['photo_local']}"
                     if a.get("photo_local")
                     else "",
-                    "bio": _strip_booking(raw_bio),
+                    "bio": _render_markdown(_strip_booking(raw_bio)) if raw_bio else "",
                 }
                 if oid in artist_videos:
                     entry["videos"] = artist_videos[oid]
@@ -2041,7 +2052,7 @@ def render_output_html(
       document.getElementById('bio-name').textContent = data.name;
       const bioText = document.getElementById('bio-text');
       if (data.bio) {
-        bioText.textContent = data.bio;
+        bioText.innerHTML = data.bio;
       } else {
         bioText.innerHTML = '<span class="bio-empty">No biography available</span>';
       }

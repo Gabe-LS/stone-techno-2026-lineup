@@ -21,6 +21,14 @@ def init_db(db: sqlite3.Connection) -> None:
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA foreign_keys=ON")
     db.executescript("""
+        CREATE TABLE IF NOT EXISTS events (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            url        TEXT,
+            start_date TEXT,
+            end_date   TEXT,
+            timezone   TEXT NOT NULL DEFAULT 'Europe/Berlin'
+        );
         CREATE TABLE IF NOT EXISTS artists (
             id                TEXT PRIMARY KEY,
             name              TEXT NOT NULL,
@@ -40,19 +48,37 @@ def init_db(db: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS locations (
             id          TEXT PRIMARY KEY,
+            event_id    TEXT NOT NULL REFERENCES events(id),
             name        TEXT NOT NULL,
-            description TEXT
+            color       TEXT,
+            description TEXT,
+            about       TEXT
+        );
+        CREATE TABLE IF NOT EXISTS location_notes (
+            location_id TEXT NOT NULL REFERENCES locations(id),
+            date        TEXT NOT NULL,
+            note        TEXT NOT NULL,
+            PRIMARY KEY (location_id, date, note)
+        );
+        CREATE TABLE IF NOT EXISTS location_details (
+            location_id TEXT NOT NULL REFERENCES locations(id),
+            label       TEXT NOT NULL,
+            value       TEXT NOT NULL,
+            position    INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (location_id, label)
         );
         CREATE TABLE IF NOT EXISTS schedule (
             artist_id   TEXT NOT NULL REFERENCES artists(id),
-            location_id TEXT,
+            event_id    TEXT NOT NULL REFERENCES events(id),
+            location_id TEXT REFERENCES locations(id),
             start_time  TEXT NOT NULL,
             end_time    TEXT NOT NULL,
             date        TEXT NOT NULL,
-            period      TEXT NOT NULL CHECK (period IN ('day', 'night')),
+            period      TEXT,
+            set_type    TEXT,
             PRIMARY KEY (artist_id, start_time)
         );
-        CREATE INDEX IF NOT EXISTS idx_schedule_date ON schedule(date, period);
+        CREATE INDEX IF NOT EXISTS idx_schedule_event ON schedule(event_id, date, period);
         CREATE TABLE IF NOT EXISTS videos (
             video_id    TEXT PRIMARY KEY,
             artist_id   TEXT NOT NULL REFERENCES artists(id),
@@ -68,22 +94,41 @@ def init_db(db: sqlite3.Connection) -> None:
     db.commit()
 
 
-def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
+def ensure_event(db: sqlite3.Connection, event_id: str, name: str, **kwargs) -> None:
+    db.execute(
+        "INSERT INTO events (id, name, url, start_date, end_date, timezone) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, url=excluded.url, "
+        "start_date=excluded.start_date, end_date=excluded.end_date, timezone=excluded.timezone",
+        (
+            event_id,
+            name,
+            kwargs.get("url"),
+            kwargs.get("start_date"),
+            kwargs.get("end_date"),
+            kwargs.get("timezone", "Europe/Berlin"),
+        ),
+    )
+    db.commit()
+
+
+def upsert_lineup(db: sqlite3.Connection, parsed: dict, event_id: str) -> None:
     section_lookup = {
         sec["key"]: (sec["date"], sec["period"]) for sec in parsed["sections"]
     }
 
     for loc_id, loc in parsed["locations"].items():
         db.execute(
-            "INSERT INTO locations (id, name, description) VALUES (?, ?, ?) "
+            "INSERT INTO locations (id, event_id, name, description) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description",
-            (loc_id, loc["name"], loc.get("description")),
+            (loc_id, event_id, loc["name"], loc.get("description")),
         )
     if parsed["locations"]:
         current_locs = list(parsed["locations"].keys())
+        placeholders = ",".join("?" * len(current_locs))
         db.execute(
-            f"DELETE FROM locations WHERE id NOT IN ({','.join('?' * len(current_locs))})",
-            current_locs,
+            f"DELETE FROM locations WHERE event_id = ? AND id NOT IN ({placeholders})",
+            [event_id, *current_locs],
         )
 
     for oid, d in parsed["artists"].items():
@@ -109,16 +154,17 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
         )
 
     if parsed["assignments"]:
-        db.execute("DELETE FROM schedule")
+        db.execute("DELETE FROM schedule WHERE event_id = ?", (event_id,))
         for assignment in parsed["assignments"]:
             ts_key = assignment["timestamp_key"]
-            date, period = section_lookup.get(ts_key, ("", "day"))
+            date, period = section_lookup.get(ts_key, ("", None))
             db.execute(
                 "INSERT OR IGNORE INTO schedule "
-                "(artist_id, location_id, start_time, end_time, date, period) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(artist_id, event_id, location_id, start_time, end_time, date, period) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     assignment["overlay_id"],
+                    event_id,
                     assignment.get("location_id"),
                     ts_key,
                     "",
@@ -133,7 +179,9 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict) -> None:
     db.commit()
 
 
-def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
+def apply_overrides(
+    db: sqlite3.Connection, overrides_path: Path, event_id: str | None = None
+) -> None:
     if not overrides_path.exists():
         return
     import tomllib
@@ -197,19 +245,53 @@ def apply_overrides(db: sqlite3.Connection, overrides_path: Path) -> None:
                         (value, aid),
                     )
                 applied += 1
+
+    if event_id:
+        curators = overrides.get("floor_curators", {})
+        if curators:
+            db.execute(
+                "DELETE FROM location_notes WHERE location_id IN "
+                "(SELECT id FROM locations WHERE event_id = ?)",
+                (event_id,),
+            )
+            for key, note in curators.items():
+                date, loc_id = key.split(".", 1)
+                db.execute(
+                    "INSERT OR IGNORE INTO location_notes (location_id, date, note) "
+                    "VALUES (?, ?, ?)",
+                    (loc_id, date, note),
+                )
+            applied += len(curators)
+
     if applied:
         db.commit()
         print(f"Applied {applied} override(s) from overrides.toml")
 
 
-def load_floor_curators(overrides_path: Path) -> dict[str, str]:
-    if not overrides_path.exists():
-        return {}
-    import tomllib
+def load_floor_curators(db: sqlite3.Connection, event_id: str) -> dict[str, str]:
+    return {
+        f"{row['date']}.{row['location_id']}": row["note"]
+        for row in db.execute(
+            "SELECT ln.location_id, ln.date, ln.note FROM location_notes ln "
+            "JOIN locations l ON l.id = ln.location_id "
+            "WHERE l.event_id = ?",
+            (event_id,),
+        )
+    }
 
-    with open(overrides_path, "rb") as f:
-        overrides = tomllib.load(f)
-    return dict(overrides.get("floor_curators", {}))
+
+def load_location_colors(db: sqlite3.Connection, event_id: str) -> dict[str, str]:
+    return {
+        row["id"]: row["color"]
+        for row in db.execute(
+            "SELECT id, color FROM locations WHERE event_id = ? AND color IS NOT NULL",
+            (event_id,),
+        )
+    }
+
+
+def get_event(db: sqlite3.Connection, event_id: str) -> sqlite3.Row | None:
+    return db.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
 
 
 def get_missing(
@@ -242,35 +324,50 @@ def save_photo_local(db: sqlite3.Connection, artist_id: str, filename: str) -> N
     db.commit()
 
 
-def load_sections_from_db(db: sqlite3.Connection) -> list[dict]:
+def load_sections_from_db(db: sqlite3.Connection, event_id: str) -> list[dict]:
     return [
         {
-            "key": f"{row['date']}:{row['period']}",
+            "key": f"{row['date']}:{row['period'] or 'all'}",
             "date": row["date"],
             "period": row["period"],
         }
         for row in db.execute(
             "SELECT DISTINCT date, period FROM schedule "
-            "ORDER BY date, CASE period WHEN 'day' THEN 0 ELSE 1 END"
+            "WHERE event_id = ? "
+            "ORDER BY date, CASE period WHEN 'day' THEN 0 WHEN 'night' THEN 1 ELSE 2 END",
+            (event_id,),
         )
     ]
 
 
-def load_locations_from_db(db: sqlite3.Connection) -> dict[str, dict]:
+def load_locations_from_db(db: sqlite3.Connection, event_id: str) -> dict[str, dict]:
     return {
-        row["id"]: {"name": row["name"], "description": row["description"]}
-        for row in db.execute("SELECT id, name, description FROM locations")
+        row["id"]: {
+            "name": row["name"],
+            "description": row["description"],
+            "color": row["color"],
+            "about": row["about"],
+        }
+        for row in db.execute(
+            "SELECT id, name, description, color, about FROM locations WHERE event_id = ?",
+            (event_id,),
+        )
     }
 
 
-def _load_artist_all_slots(db: sqlite3.Connection) -> dict[str, list[dict]]:
+def _load_artist_all_slots(
+    db: sqlite3.Connection, event_id: str
+) -> dict[str, list[dict]]:
     slots: dict[str, list[dict]] = {}
     for row in db.execute(
         "SELECT s.artist_id, s.date, s.period, s.location_id, l.name AS location_name, "
         "s.start_time, s.end_time "
         "FROM schedule s "
         "LEFT JOIN locations l ON l.id = s.location_id "
-        "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 ELSE 1 END, s.start_time"
+        "WHERE s.event_id = ? "
+        "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 WHEN 'night' THEN 1 ELSE 2 END, "
+        "s.start_time",
+        (event_id,),
     ):
         slots.setdefault(row["artist_id"], []).append(
             {
@@ -285,20 +382,24 @@ def _load_artist_all_slots(db: sqlite3.Connection) -> dict[str, list[dict]]:
     return slots
 
 
-def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
-    all_slots = _load_artist_all_slots(db)
+def load_assignments_from_db(
+    db: sqlite3.Connection, event_id: str
+) -> dict[str, list[dict]]:
+    all_slots = _load_artist_all_slots(db, event_id)
     assignments: dict[str, list[dict]] = {}
     for row in db.execute(
         "SELECT a.id, a.name, a.instagram, a.soundcloud, a.spotify, a.linktree, "
         "a.youtube, a.photo_local, a.ig_followers, a.sc_followers, a.spotify_listeners, "
         "a.ra, a.ra_followers, a.ra_bio, "
-        "s.date, s.period, s.location_id, s.start_time, s.end_time "
+        "s.date, s.period, s.location_id, s.start_time, s.end_time, s.set_type "
         "FROM schedule s "
         "JOIN artists a ON a.id = s.artist_id "
-        "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 ELSE 1 END, "
-        "s.start_time, a.name"
+        "WHERE s.event_id = ? "
+        "ORDER BY s.date, CASE s.period WHEN 'day' THEN 0 WHEN 'night' THEN 1 ELSE 2 END, "
+        "s.start_time, a.name",
+        (event_id,),
     ):
-        section_key = f"{row['date']}:{row['period']}"
+        section_key = f"{row['date']}:{row['period'] or 'all'}"
         assignments.setdefault(section_key, []).append(
             {
                 "name": row["name"],
@@ -319,6 +420,7 @@ def load_assignments_from_db(db: sqlite3.Connection) -> dict[str, list[dict]]:
                 "ra": row["ra"],
                 "ra_followers": row["ra_followers"],
                 "ra_bio": row["ra_bio"],
+                "set_type": row["set_type"],
             }
         )
     return assignments

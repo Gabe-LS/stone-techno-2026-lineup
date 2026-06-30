@@ -9,6 +9,8 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "lineup.db"
 
+DEFAULT_EVENT_ID = "stone-techno-2026"
+
 DAY_FLOORS = [
     ("eisbahn", "Eisbahn", None),
     ("koksofenbatterie", "Koksofenbatterie", None),
@@ -32,24 +34,26 @@ NIGHT_END_HOUR = 31  # 07:00 next day
 SET_LENGTHS = [60, 75, 90, 105, 120]
 
 
-def seed(db: sqlite3.Connection) -> None:
+def seed(db: sqlite3.Connection, event_id: str = DEFAULT_EVENT_ID) -> None:
     for loc_id, name, desc in ALL_FLOORS:
         db.execute(
-            "INSERT INTO locations (id, name, description) VALUES (?, ?, ?) "
+            "INSERT INTO locations (id, event_id, name, description) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description",
-            (loc_id, name, desc),
+            (loc_id, event_id, name, desc),
         )
 
     date_periods = db.execute(
         "SELECT DISTINCT date, period FROM schedule "
-        "ORDER BY date, CASE period WHEN 'day' THEN 0 ELSE 1 END"
+        "WHERE event_id = ? "
+        "ORDER BY date, CASE period WHEN 'day' THEN 0 WHEN 'night' THEN 1 ELSE 2 END",
+        (event_id,),
     ).fetchall()
 
     for row in date_periods:
         date, period = row["date"], row["period"]
         artists = db.execute(
-            "SELECT artist_id FROM schedule WHERE date = ? AND period = ?",
-            (date, period),
+            "SELECT artist_id FROM schedule WHERE event_id = ? AND date = ? AND period IS ?",
+            (event_id, date, period),
         ).fetchall()
         if not artists:
             continue
@@ -76,7 +80,10 @@ def seed(db: sqlite3.Connection) -> None:
             chunks.append(artist_ids[idx : idx + n])
             idx += n
 
-        db.execute("DELETE FROM schedule WHERE date = ? AND period = ?", (date, period))
+        db.execute(
+            "DELETE FROM schedule WHERE event_id = ? AND date = ? AND period IS ?",
+            (event_id, date, period),
+        )
 
         for floor_id, chunk in zip(floor_ids, chunks):
             if not chunk:
@@ -111,9 +118,9 @@ def seed(db: sqlite3.Connection) -> None:
                 for aid in group:
                     db.execute(
                         "INSERT INTO schedule "
-                        "(artist_id, location_id, start_time, end_time, date, period) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
-                        (aid, floor_id, start_time, end_time, date, period),
+                        "(artist_id, event_id, location_id, start_time, end_time, date, period) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (aid, event_id, floor_id, start_time, end_time, date, period),
                     )
                 cursor += length
 

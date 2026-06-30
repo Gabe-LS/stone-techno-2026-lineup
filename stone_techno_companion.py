@@ -13,10 +13,12 @@ from playwright.sync_api import sync_playwright
 
 from scraper.db import (
     apply_overrides,
+    ensure_event,
     init_db,
     load_all_videos,
     load_assignments_from_db,
     load_floor_curators,
+    load_location_colors,
     load_locations_from_db,
     load_sections_from_db,
     upsert_lineup,
@@ -40,6 +42,9 @@ PHOTOS_DIR = DEFAULT_OUTPUT_DIR / "photos"
 OVERRIDES_PATH = PROJECT_ROOT / "scraper" / "overrides.toml"
 VPS_HOST = "root@209.38.244.136"
 VPS_STATIC_DIR = "/root/services/stone-techno/server/static/"
+
+DEFAULT_EVENT_ID = "stone-techno-2026"
+DEFAULT_EVENT_NAME = "Stone Techno 2026"
 
 
 def deploy_to_vps(output_dir: Path, output_path: Path) -> None:
@@ -91,6 +96,8 @@ def main() -> None:
     parser.add_argument("--url", default=STONE_TECHNO_URL)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--title", default="Stone Techno Companion")
+    parser.add_argument("--event-id", default=DEFAULT_EVENT_ID)
+    parser.add_argument("--event-name", default=DEFAULT_EVENT_NAME)
     parser.add_argument(
         "--no-followers", action="store_true", help="Skip fetching follower counts"
     )
@@ -115,10 +122,13 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "lineup.html"
 
+    event_id = args.event_id
+
     db = sqlite3.connect(str(DB_PATH))
     db.row_factory = sqlite3.Row
     try:
         init_db(db)
+        ensure_event(db, event_id, args.event_name, url=args.url)
 
         if not args.render_only:
             with sync_playwright() as p:
@@ -135,8 +145,8 @@ def main() -> None:
                         f"Parsed {len(parsed['artists'])} artists across "
                         f"{len(parsed['sections'])} sections, {len(parsed['locations'])} locations."
                     )
-                    upsert_lineup(db, parsed)
-                    apply_overrides(db, OVERRIDES_PATH)
+                    upsert_lineup(db, parsed, event_id)
+                    apply_overrides(db, OVERRIDES_PATH, event_id)
 
                     if args.refresh_followers:
                         db.execute(
@@ -154,7 +164,7 @@ def main() -> None:
                     browser.close()
         else:
             print("Rendering from database (no scraping) ...")
-            apply_overrides(db, OVERRIDES_PATH)
+            apply_overrides(db, OVERRIDES_PATH, event_id)
 
         if args.refresh_photos:
             db.execute("UPDATE artists SET photo_local = NULL")
@@ -163,11 +173,12 @@ def main() -> None:
         if not args.no_photos:
             process_artist_photos(db, output_dir / "photos")
 
-        ordered_sections = load_sections_from_db(db)
-        all_locations = load_locations_from_db(db)
-        all_assignments = load_assignments_from_db(db)
+        ordered_sections = load_sections_from_db(db, event_id)
+        all_locations = load_locations_from_db(db, event_id)
+        all_assignments = load_assignments_from_db(db, event_id)
         all_videos = load_all_videos(db)
-        floor_curators = load_floor_curators(OVERRIDES_PATH)
+        floor_curators = load_floor_curators(db, event_id)
+        floor_colors = load_location_colors(db, event_id)
 
         has_timetable = any(
             a.get("start_time") for artists in all_assignments.values() for a in artists
@@ -180,12 +191,13 @@ def main() -> None:
             all_locations,
             has_timetable=has_timetable,
             floor_curators=floor_curators,
+            floor_colors=floor_colors,
             output_dir=str(output_dir),
             videos=all_videos,
         )
 
         if has_timetable:
-            timetable_json = generate_timetable_json(db)
+            timetable_json = generate_timetable_json(db, event_id)
             timetable_path = output_dir / "timetable.json"
             timetable_path.write_text(timetable_json, encoding="utf-8")
             print(f"Wrote {timetable_path}")
