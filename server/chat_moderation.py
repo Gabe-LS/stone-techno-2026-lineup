@@ -1,4 +1,4 @@
-"""Chat moderation pipeline: word filter + OpenAI omni-moderation + strike system."""
+"""Chat moderation pipeline: word filter + OpenAI omni-moderation + GPT drug detection + strike system."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import os
 import re
 import unicodedata
 from pathlib import Path
+
+import httpx
 
 BLOCKLIST_PATH = Path(__file__).resolve().parent / "chat" / "blocklist.txt"
 
@@ -154,45 +156,118 @@ OPENAI_THRESHOLDS = {
 
 INSTANT_BAN_CATEGORIES = {"sexual/minors", "violence/graphic"}
 
+DRUG_DETECTION_PROMPT = (
+    "You are a festival chat moderator. Respond ONLY with JSON, no markdown. "
+    "Flag any message that references illegal drugs (including slang: molly, ket, "
+    "party favors, rolling, scored, plug, bumps, lines, etc.), asks to buy/sell/share "
+    "drugs, describes being under the influence of drugs, or uses coded language "
+    "commonly used to reference drugs at festivals. "
+    'Respond: {"flagged": true, "reason": "..."} or {"flagged": false, "reason": ""}'
+)
+
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        import httpx as _httpx
+
+        _http_client = _httpx.AsyncClient(timeout=5.0)
+    return _http_client
+
+
+def _get_api_headers() -> dict[str, str]:
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
 
 async def check_openai_moderation(
     text: str, image_url: str | None = None
 ) -> dict | None:
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    if not os.environ.get("OPENAI_API_KEY"):
         return None
 
     try:
-        import openai
+        import httpx
 
-        client = openai.AsyncOpenAI(api_key=api_key)
-
+        client = _get_http_client()
         input_content: list[dict] = [{"type": "text", "text": text}]
         if image_url:
             input_content.append({"type": "image_url", "image_url": {"url": image_url}})
 
-        response = await client.moderations.create(
-            model="omni-moderation-latest",
-            input=input_content,
+        r = await client.post(
+            "https://api.openai.com/v1/moderations",
+            headers=_get_api_headers(),
+            json={"model": "omni-moderation-latest", "input": input_content},
         )
-
-        if not response.results:
+        data = r.json()
+        results = data.get("results")
+        if not results:
             return None
 
-        result = response.results[0]
-        scores = result.category_scores
-
+        scores = results[0].get("category_scores", {})
         for category, threshold in OPENAI_THRESHOLDS.items():
-            score = getattr(scores, category.replace("/", "_").replace("-", "_"), 0)
+            score = scores.get(category, 0) or scores.get(
+                category.replace("/", "_").replace("-", "_"), 0
+            )
             if score and score >= threshold:
                 return {
                     "category": category,
                     "score": score,
                     "instant_ban": category in INSTANT_BAN_CATEGORIES,
                 }
-
+        return None
+    except Exception:
         return None
 
+
+async def check_drug_detection(text: str) -> dict | None:
+    if not os.environ.get("OPENAI_API_KEY"):
+        return None
+
+    try:
+        import httpx
+        import json as _json
+
+        client = _get_http_client()
+        r = await client.post(
+            "https://api.openai.com/v1/responses",
+            headers=_get_api_headers(),
+            json={
+                "model": "gpt-5.4-nano",
+                "instructions": DRUG_DETECTION_PROMPT,
+                "input": text,
+                "max_output_tokens": 150,
+                "reasoning": {"effort": "none"},
+            },
+        )
+        data = r.json()
+        if data.get("error"):
+            return None
+
+        output_text = ""
+        for item in data.get("output", []):
+            if item.get("type") == "message":
+                for c in item.get("content", []):
+                    if c.get("type") == "output_text":
+                        output_text = c["text"]
+
+        output_text = output_text.strip()
+        if not output_text:
+            return None
+
+        parsed = _json.loads(output_text)
+        if parsed.get("flagged"):
+            return {
+                "category": "drug_detection",
+                "reason": parsed.get("reason", "Drug-related content"),
+                "is_drug": True,
+            }
+        return None
     except Exception:
         return None
 
@@ -304,10 +379,23 @@ async def moderate_message(
             "strike_count": result.get("strike_count"),
         }
 
+    import asyncio as _asyncio
+
+    moderation_task = _asyncio.create_task(check_openai_moderation(text, image_url))
+    drug_task = _asyncio.create_task(check_drug_detection(text))
+
     try:
-        ai_result = await check_openai_moderation(text, image_url)
+        ai_result, drug_result = await _asyncio.gather(
+            moderation_task, drug_task, return_exceptions=True
+        )
     except Exception:
+        ai_result, drug_result = None, None
+
+    if isinstance(ai_result, Exception):
         ai_result = None
+    if isinstance(drug_result, Exception):
+        drug_result = None
+
     if ai_result:
         if ai_result["instant_ban"]:
             from chat_db import ban_user, get_user
@@ -332,6 +420,17 @@ async def moderate_message(
         return {
             "allowed": False,
             "reason": result.get("message", "Message blocked by AI moderation."),
+            "action": result["action"],
+            "strike_count": result.get("strike_count"),
+        }
+
+    if drug_result:
+        result = process_strike(
+            db, user_id, "ai_moderation", drug_result["reason"], is_drug=True
+        )
+        return {
+            "allowed": False,
+            "reason": result.get("message", "Message blocked: drug-related content."),
             "action": result["action"],
             "strike_count": result.get("strike_count"),
         }
