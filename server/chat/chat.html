@@ -114,12 +114,12 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .reaction-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .reaction-pill { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-bg); font-size: var(--font-xs); cursor: pointer; }
 .reaction-pill.own { background: rgba(229,62,62,0.1); border-color: var(--color-accent); }
-.react-btn { opacity: 0; position: absolute; right: 4px; top: -8px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 26px; height: 26px; font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+.msg-bubble { position: relative; }
+.react-btn { opacity: 0; position: absolute; top: -10px; right: -10px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 26px; height: 26px; font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
 .msg:hover .react-btn { opacity: 1; }
-.msg.msg-mine .react-btn { right: auto; left: 4px; }
-.reaction-picker { display: flex; gap: 2px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 20px; padding: 4px 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: absolute; z-index: 50; top: -40px; }
-.msg.msg-mine .reaction-picker { right: 0; }
-.msg.msg-other .reaction-picker { left: 36px; }
+.msg-mine-bubble .react-btn { right: auto; left: -10px; }
+.reaction-picker { display: flex; gap: 2px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 20px; padding: 4px 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: absolute; z-index: 50; top: -36px; right: 0; }
+.msg-other-bubble .reaction-picker { right: auto; left: 0; }
 .reaction-picker button { background: none; border: none; font-size: 20px; padding: 4px 6px; cursor: pointer; border-radius: 50%; }
 @media (hover: hover) { .reaction-picker button:hover { background: var(--color-surface); } }
 
@@ -214,6 +214,10 @@ let _toastTimer = null;
 const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','🔥':'fire','😮':'wow','👏':'clap'};
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
 
+// --- Debug ---
+const DEBUG = location.search.includes('debug') || true;
+function dbg(...args) { if (DEBUG) console.log('[chat]', ...args); }
+
 // --- Avatar ---
 function avatarColor(id) {
   let hash = 0;
@@ -303,20 +307,29 @@ async function setName() {
   try {
     await api('/auth/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: name }) });
     currentUser.display_name = name;
-    connectWS();
+    await connectWS();
     renderRoomList();
   } catch (e) { showToast(e.message); }
 }
 
 // --- WebSocket ---
+let _wsConnecting = false;
 function connectWS() {
-  if (ws) ws.close();
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const token = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('chat_session='));
-  if (!token) return;
-  ws = new WebSocket(`${proto}://${location.host}/ws/chat/${token.split('=')[1]}`);
-  ws.onmessage = (e) => handleWSEvent(JSON.parse(e.data));
-  ws.onclose = () => { setTimeout(connectWS, 3000); };
+  return new Promise((resolve) => {
+    if (_wsConnecting) { resolve(); return; }
+    _wsConnecting = true;
+    if (ws) { try { ws.onclose = null; ws.close(); } catch {} }
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const token = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('chat_session='));
+    if (!token) { _wsConnecting = false; resolve(); return; }
+    const sock = new WebSocket(`${proto}://${location.host}/ws/chat/${token.split('=')[1]}`);
+    const done = () => { _wsConnecting = false; resolve(); };
+    sock.onopen = () => { ws = sock; done(); };
+    sock.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
+    sock.onclose = () => { ws = null; _wsConnecting = false; setTimeout(() => connectWS(), 3000); };
+    sock.onerror = () => { done(); };
+    setTimeout(done, 3000);
+  });
 }
 
 function wsSend(event, payload) {
@@ -324,6 +337,7 @@ function wsSend(event, payload) {
 }
 
 function handleWSEvent(data) {
+  dbg('ws event:', data.event, data.room_id || data.message_id || '');
   switch (data.event) {
     case 'room_history':
       messagesByRoom[data.room_id] = data.messages;
@@ -487,13 +501,29 @@ async function loadDMs() {
 }
 
 // --- Chat View ---
-function openRoom(roomId, roomName, roomType) {
+async function openRoom(roomId, roomName, roomType) {
+  dbg('openRoom:', roomId, roomName, roomType);
   currentRoom = roomId;
   currentRoomName = roomName;
   currentRoomType = roomType || 'stage';
-  wsSend('join_room', { room_id: roomId });
+  if (!isMobile && !document.querySelector('.main-panel')) {
+    dbg('openRoom: creating desktop layout first');
+    renderRoomList();
+  }
   renderChatView(roomName);
   location.hash = 'chat/room/' + roomId;
+  if (ws && ws.readyState === 1) {
+    wsSend('join_room', { room_id: roomId });
+  } else {
+    try {
+      const msgs = await api('/rooms/' + roomId + '/messages');
+      messagesByRoom[roomId] = msgs;
+      renderMessages();
+      scrollToBottom();
+    } catch {}
+    await connectWS();
+    if (ws && ws.readyState === 1) wsSend('join_room', { room_id: roomId });
+  }
 }
 
 function renderChatView(roomName) {
@@ -617,8 +647,8 @@ function renderMessage(m) {
 
   if (isMe) {
     return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}')" ontouchend="msgTouchEnd()" onclick="msgTap('${m.id}','${escapeHtml(name)}')">
-      ${reactBtn}
       <div class="msg-bubble msg-mine-bubble">
+        ${reactBtn}
         ${replyHtml}${contentHtml}
         <div class="msg-time">${fmtTime(m.created_at)}</div>
         ${reactionsHtml}
@@ -628,8 +658,8 @@ function renderMessage(m) {
 
   return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}')" ontouchend="msgTouchEnd()" onclick="msgTap('${m.id}','${escapeHtml(name)}')">
     ${avatarHtml(name, uid, true)}
-    ${reactBtn}
     <div class="msg-bubble msg-other-bubble">
+      ${reactBtn}
       <div class="msg-header">
         <span class="msg-name" onclick="event.stopPropagation();showUserMenu('${uid}','${escapeHtml(name)}')">${escapeHtml(name)}</span>
         <span class="msg-time">${fmtTime(m.created_at)}</span>
@@ -725,7 +755,8 @@ function showReactionPicker(msgId, btn) {
     b.onclick = (e) => { e.stopPropagation(); toggleReaction(msgId, key); closeReactionPicker(); };
     picker.appendChild(b);
   });
-  msgEl.appendChild(picker);
+  const bubble = msgEl.querySelector('.msg-bubble') || msgEl;
+  bubble.appendChild(picker);
   const dismiss = (e) => { if (!e.target.closest('.reaction-picker')) { closeReactionPicker(); document.removeEventListener('click', dismiss); } };
   setTimeout(() => document.addEventListener('click', dismiss), 10);
 }
@@ -796,12 +827,13 @@ document.addEventListener('click', (e) => {
 
 function shareLocation() {
   if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
+  showToast('Getting location...');
   navigator.geolocation.getCurrentPosition(pos => {
-    const label = prompt('Add a label (optional)') || '';
     wsSend('send_message', {
       room_id: currentRoom, type: 'location',
-      content: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, label }),
+      content: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' }),
     });
+    showToast('Location shared');
   }, () => showToast('Could not get location'));
 }
 
@@ -926,15 +958,20 @@ const esc = escapeHtml;
 function navigateTo(hash) { location.hash = hash; }
 
 // --- Router ---
+let _routing = false;
 async function route() {
+  if (_routing) { dbg('route: skip (already routing)'); return; }
+  _routing = true;
+  try {
   const hash = location.hash.slice(1) || 'chat';
+  dbg('route:', hash);
 
   if (hash.startsWith('chat/room/') && currentRoom === hash.replace('chat/room/', '') && currentRoomName) return;
 
   const authed = await checkAuth();
   if (!authed) { renderAuth(); return; }
   if (!currentUser.display_name || currentUser.display_name.length < 3) { renderNamePrompt(); return; }
-  if (!ws || ws.readyState !== 1) connectWS();
+  if (!ws || ws.readyState !== 1) await connectWS();
   await loadRooms();
 
   if (hash.startsWith('chat/room/')) {
@@ -955,6 +992,12 @@ async function route() {
     currentRoomName = null;
     currentRoomType = null;
     renderRoomList();
+  }
+  } catch (e) {
+    console.error('Route error:', e);
+    renderRoomList();
+  } finally {
+    _routing = false;
   }
 }
 
