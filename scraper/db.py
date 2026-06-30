@@ -130,12 +130,21 @@ def upsert_lineup(db: sqlite3.Connection, parsed: dict, event_id: str) -> None:
         sec["key"]: (sec["date"], sec["period"]) for sec in parsed["sections"]
     }
 
+    all_dates = sorted({date for date, _ in section_lookup.values()})
     for loc_id, loc in parsed["locations"].items():
         db.execute(
-            "INSERT INTO locations (id, event_id, name, description) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description",
-            (loc_id, event_id, loc["name"], loc.get("description")),
+            "INSERT INTO locations (id, event_id, name) VALUES (?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name",
+            (loc_id, event_id, loc["name"]),
         )
+        loc_desc = loc.get("description")
+        if loc_desc:
+            for date in all_dates:
+                db.execute(
+                    "INSERT OR IGNORE INTO location_notes (location_id, date, note) "
+                    "VALUES (?, ?, ?)",
+                    (loc_id, date, loc_desc),
+                )
     if parsed["locations"]:
         current_locs = list(parsed["locations"].keys())
         placeholders = ",".join("?" * len(current_locs))
@@ -261,19 +270,14 @@ def apply_overrides(
 
     if event_id:
         curators = overrides.get("floor_curators", {})
-        if curators:
+        for key, note in curators.items():
+            date, loc_id = key.split(".", 1)
             db.execute(
-                "DELETE FROM location_notes WHERE location_id IN "
-                "(SELECT id FROM locations WHERE event_id = ?)",
-                (event_id,),
+                "INSERT OR IGNORE INTO location_notes (location_id, date, note) "
+                "VALUES (?, ?, ?)",
+                (loc_id, date, note),
             )
-            for key, note in curators.items():
-                date, loc_id = key.split(".", 1)
-                db.execute(
-                    "INSERT OR IGNORE INTO location_notes (location_id, date, note) "
-                    "VALUES (?, ?, ?)",
-                    (loc_id, date, note),
-                )
+        if curators:
             applied += len(curators)
 
     if applied:

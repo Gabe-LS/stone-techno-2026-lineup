@@ -219,11 +219,29 @@ def migrate() -> None:
             print(f"  Skipping orphan location: {loc_id} ({row['name']})")
             continue
         color = FLOOR_COLORS.get(loc_id)
+        desc = row["description"]
         db.execute(
-            "INSERT OR IGNORE INTO locations_new (id, event_id, name, color, description) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (loc_id, DEFAULT_EVENT_ID, row["name"], color, row["description"]),
+            "INSERT OR IGNORE INTO locations_new (id, event_id, name, color) "
+            "VALUES (?, ?, ?, ?)",
+            (loc_id, DEFAULT_EVENT_ID, row["name"], color),
         )
+        if desc:
+            all_dates = (
+                list({d for d, _ in section_lookup.values()})
+                if section_lookup
+                else [
+                    r[0]
+                    for r in db.execute("SELECT DISTINCT date FROM schedule").fetchall()
+                ]
+                if source_schedule == "schedule"
+                else []
+            )
+            for date in sorted(all_dates):
+                db.execute(
+                    "INSERT OR IGNORE INTO location_notes (location_id, date, note) "
+                    "VALUES (?, ?, ?)",
+                    (loc_id, date, desc),
+                )
     locs_count = db.execute("SELECT COUNT(*) FROM locations_new").fetchone()[0]
     print(f"Migrated {locs_count} locations with colors")
 
