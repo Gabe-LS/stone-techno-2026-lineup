@@ -345,6 +345,15 @@ async def room_messages(room_id: str, request: Request):
     ]
 
 
+@router.get("/rooms/{room_id}/info")
+async def room_info(room_id: str, request: Request):
+    user, db = _get_user_from_cookie(request)
+    room = get_room(db, room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    return {"id": room["id"], "name": room["name"], "type": room["type"]}
+
+
 @router.get("/rooms/{room_id}/online")
 async def room_online(room_id: str):
     from chat_ws import manager

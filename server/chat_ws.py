@@ -17,6 +17,10 @@ from chat_db import (
     get_room,
     create_message,
     get_room_messages,
+    get_reactions_for_messages,
+    add_reaction,
+    remove_reaction,
+    get_message_reactions,
     create_meetup,
     join_meetup,
     leave_meetup,
@@ -162,6 +166,136 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def _build_reply_snippet(db, reply_to_id: str | None) -> dict | None:
+    if not reply_to_id:
+        return None
+    orig = db.execute(
+        "SELECT m.content, m.type, u.display_name FROM messages m "
+        "JOIN users u ON u.id = m.user_id WHERE m.id = ?",
+        (reply_to_id,),
+    ).fetchone()
+    if not orig:
+        return None
+    reply_text = ""
+    if orig["type"] == "text":
+        try:
+            reply_text = json.loads(orig["content"]).get("text", "")[:80]
+        except Exception:
+            reply_text = orig["content"][:80]
+    return {"id": reply_to_id, "display_name": orig["display_name"], "text": reply_text}
+
+
+def _format_message_for_history(m, reactions_map: dict) -> dict:
+    d = {
+        "id": m["id"],
+        "room_id": m["room_id"],
+        "user_id": m["user_id"],
+        "display_name": m["display_name"],
+        "type": m["type"],
+        "content": m["content"],
+        "created_at": m["created_at"],
+    }
+    if m["reply_to_id"] and m["reply_display_name"]:
+        reply_text = ""
+        if m["reply_type"] == "text":
+            try:
+                reply_text = json.loads(m["reply_content"]).get("text", "")[:80]
+            except Exception:
+                reply_text = (m["reply_content"] or "")[:80]
+        d["reply_to"] = {
+            "id": m["reply_to_id"],
+            "display_name": m["reply_display_name"],
+            "text": reply_text,
+        }
+    if m["id"] in reactions_map:
+        d["reactions"] = reactions_map[m["id"]]
+    return d
+
+
+async def _moderate_and_broadcast(
+    db,
+    mgr,
+    room_id,
+    user_id,
+    display_name,
+    msg,
+    msg_type,
+    content,
+    text,
+    image_url,
+    reply_to_id,
+    ws,
+):
+    try:
+        mod_result = await moderate_message(db, user_id, text, image_url)
+
+        if not mod_result["allowed"]:
+            db.execute("DELETE FROM messages WHERE id = ?", (msg["id"],))
+            db.commit()
+            await mgr.send_to_user(
+                user_id,
+                {
+                    "event": "message_removed",
+                    "id": msg["id"],
+                    "room_id": room_id,
+                    "reason": mod_result["reason"],
+                },
+            )
+            if mod_result["action"] == "ban":
+                await mgr.send_to_user(
+                    user_id, {"event": "banned", "reason": mod_result["reason"]}
+                )
+                try:
+                    await ws.close(code=4003, reason="Banned")
+                except Exception:
+                    pass
+            elif mod_result.get("strike_count"):
+                await mgr.send_to_user(
+                    user_id,
+                    {
+                        "event": "strike",
+                        "count": mod_result["strike_count"],
+                        "reason": mod_result["reason"],
+                    },
+                )
+            return
+
+        event_data = {
+            "event": "message",
+            "id": msg["id"],
+            "room_id": room_id,
+            "user_id": user_id,
+            "display_name": display_name,
+            "type": msg_type,
+            "content": content,
+            "created_at": msg["created_at"],
+        }
+        reply_snippet = _build_reply_snippet(db, reply_to_id)
+        if reply_snippet:
+            event_data["reply_to"] = reply_snippet
+        await mgr.broadcast_to_room(room_id, event_data, exclude=user_id)
+
+    except Exception:
+        logger.exception("Moderation task error for message %s", msg["id"])
+        await mgr.broadcast_to_room(
+            room_id,
+            {
+                "event": "message",
+                "id": msg["id"],
+                "room_id": room_id,
+                "user_id": user_id,
+                "display_name": display_name,
+                "type": msg_type,
+                "content": content,
+                "created_at": msg["created_at"],
+            },
+            exclude=user_id,
+        )
+
+
+ALLOWED_REACTIONS = {"thumbs_up", "heart", "laugh", "fire", "wow", "clap"}
+
+
 async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     db = get_chat_db()
     user = get_user_by_token(db, token)
@@ -191,21 +325,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if room_id and get_room(db, room_id):
                     await manager.join_room(room_id, user_id, display_name)
                     messages = get_room_messages(db, room_id, limit=50)
+                    msg_ids = [m["id"] for m in messages]
+                    reactions_map = get_reactions_for_messages(db, msg_ids)
                     await manager.send_to_user(
                         user_id,
                         {
                             "event": "room_history",
                             "room_id": room_id,
                             "messages": [
-                                {
-                                    "id": m["id"],
-                                    "room_id": m["room_id"],
-                                    "user_id": m["user_id"],
-                                    "display_name": m["display_name"],
-                                    "type": m["type"],
-                                    "content": m["content"],
-                                    "created_at": m["created_at"],
-                                }
+                                _format_message_for_history(m, reactions_map)
                                 for m in reversed(messages)
                             ],
                             "online": manager.get_online_users(room_id),
@@ -221,6 +349,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 room_id = data.get("room_id")
                 msg_type = data.get("type", "text")
                 content = data.get("content", "")
+                temp_id = data.get("temp_id")
+                reply_to_id = data.get("reply_to_id")
 
                 if not room_id or not content:
                     continue
@@ -230,10 +360,25 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         user_id,
                         {
                             "event": "message_rejected",
+                            "temp_id": temp_id,
                             "reason": "Slow down — too many messages.",
                         },
                     )
                     continue
+
+                msg = create_message(
+                    db, room_id, user_id, msg_type, content, reply_to_id=reply_to_id
+                )
+
+                await manager.send_to_user(
+                    user_id,
+                    {
+                        "event": "message_acked",
+                        "temp_id": temp_id,
+                        "id": msg["id"],
+                        "created_at": msg["created_at"],
+                    },
+                )
 
                 text_for_moderation = ""
                 if msg_type == "text":
@@ -241,7 +386,6 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         text_for_moderation = json.loads(content).get("text", "")
                     except (json.JSONDecodeError, AttributeError):
                         text_for_moderation = content
-
                 image_url = None
                 if msg_type == "image":
                     try:
@@ -249,39 +393,21 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     except (json.JSONDecodeError, AttributeError):
                         pass
 
-                mod_result = await moderate_message(
-                    db, user_id, text_for_moderation, image_url
-                )
-
-                if not mod_result["allowed"]:
-                    response = {
-                        "event": "message_rejected",
-                        "reason": mod_result["reason"],
-                    }
-                    if mod_result["action"] == "ban":
-                        response["event"] = "banned"
-                    elif mod_result.get("strike_count"):
-                        response["event"] = "strike"
-                        response["count"] = mod_result["strike_count"]
-                    await manager.send_to_user(user_id, response)
-                    if mod_result["action"] == "ban":
-                        await ws.close(code=4003, reason="Banned")
-                        return
-                    continue
-
-                msg = create_message(db, room_id, user_id, msg_type, content)
-                await manager.broadcast_to_room(
-                    room_id,
-                    {
-                        "event": "message",
-                        "id": msg["id"],
-                        "room_id": room_id,
-                        "user_id": user_id,
-                        "display_name": display_name,
-                        "type": msg_type,
-                        "content": content,
-                        "created_at": msg["created_at"],
-                    },
+                asyncio.create_task(
+                    _moderate_and_broadcast(
+                        db,
+                        manager,
+                        room_id,
+                        user_id,
+                        display_name,
+                        msg,
+                        msg_type,
+                        content,
+                        text_for_moderation,
+                        image_url,
+                        reply_to_id,
+                        ws,
+                    )
                 )
 
             elif event == "typing":
@@ -305,7 +431,6 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 meetup_time = data.get("meetup_time")
                 if not title or not meetup_time:
                     continue
-
                 meetup = create_meetup(
                     db,
                     user_id,
@@ -318,7 +443,6 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     location_label=data.get("label"),
                     note=data.get("note"),
                 )
-
                 if stage_id:
                     invite_content = json.dumps(
                         {
@@ -343,13 +467,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "created_at": invite_msg["created_at"],
                         },
                     )
-
                 await manager.broadcast_to_room(
                     stage_id or f"{event_id}:general",
-                    {
-                        "event": "meetup_created",
-                        "meetup": meetup,
-                    },
+                    {"event": "meetup_created", "meetup": meetup},
                 )
 
             elif event == "join_meetup":
@@ -402,11 +522,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 try:
                     room_id = find_or_create_dm(db, event_id, user_id, target_user_id)
                     await manager.send_to_user(
-                        user_id,
-                        {
-                            "event": "dm_opened",
-                            "room_id": room_id,
-                        },
+                        user_id, {"event": "dm_opened", "room_id": room_id}
                     )
                 except ValueError:
                     pass
@@ -420,6 +536,46 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 target = data.get("target_user_id")
                 if target:
                     unblock_user(db, user_id, target)
+
+            elif event == "add_reaction":
+                message_id = data.get("message_id")
+                emoji = data.get("emoji")
+                if not message_id or not emoji or emoji not in ALLOWED_REACTIONS:
+                    continue
+                msg_row = db.execute(
+                    "SELECT room_id FROM messages WHERE id = ?", (message_id,)
+                ).fetchone()
+                if msg_row:
+                    add_reaction(db, message_id, user_id, emoji)
+                    reactions = get_message_reactions(db, message_id)
+                    await manager.broadcast_to_room(
+                        msg_row["room_id"],
+                        {
+                            "event": "reaction_updated",
+                            "message_id": message_id,
+                            "reactions": reactions,
+                        },
+                    )
+
+            elif event == "remove_reaction":
+                message_id = data.get("message_id")
+                emoji = data.get("emoji")
+                if not message_id or not emoji:
+                    continue
+                msg_row = db.execute(
+                    "SELECT room_id FROM messages WHERE id = ?", (message_id,)
+                ).fetchone()
+                if msg_row:
+                    remove_reaction(db, message_id, user_id, emoji)
+                    reactions = get_message_reactions(db, message_id)
+                    await manager.broadcast_to_room(
+                        msg_row["room_id"],
+                        {
+                            "event": "reaction_updated",
+                            "message_id": message_id,
+                            "reactions": reactions,
+                        },
+                    )
 
             elif event == "report_message":
                 message_id = data.get("message_id")
@@ -439,11 +595,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         reason,
                     )
                     await manager.send_to_user(
-                        user_id,
-                        {
-                            "event": "report_confirmed",
-                            "message_id": message_id,
-                        },
+                        user_id, {"event": "report_confirmed", "message_id": message_id}
                     )
 
     except WebSocketDisconnect:

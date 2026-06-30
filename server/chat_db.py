@@ -69,16 +69,26 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS messages (
-            id         TEXT PRIMARY KEY,
-            room_id    TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            type       TEXT NOT NULL,
-            content    TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            id          TEXT PRIMARY KEY,
+            room_id     TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            type        TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            reply_to_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+            expires_at  TEXT NOT NULL,
+            created_at  TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
         CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS message_reactions (
+            message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            emoji      TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (message_id, user_id, emoji)
+        );
+        CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
 
         CREATE TABLE IF NOT EXISTS meetups (
             id             TEXT PRIMARY KEY,
@@ -341,14 +351,15 @@ def create_message(
     msg_type: str,
     content: str,
     ttl_minutes: int = DEFAULT_MESSAGE_TTL_MIN,
+    reply_to_id: str | None = None,
 ) -> dict:
     msg_id = _uuid()
     now = _now()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat()
     db.execute(
-        "INSERT INTO messages (id, room_id, user_id, type, content, expires_at, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (msg_id, room_id, user_id, msg_type, content, expires, now),
+        "INSERT INTO messages (id, room_id, user_id, type, content, reply_to_id, expires_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (msg_id, room_id, user_id, msg_type, content, reply_to_id, expires, now),
     )
     db.commit()
     return {
@@ -357,6 +368,7 @@ def create_message(
         "user_id": user_id,
         "type": msg_type,
         "content": content,
+        "reply_to_id": reply_to_id,
         "expires_at": expires,
         "created_at": now,
     }
@@ -366,12 +378,76 @@ def get_room_messages(
     db: sqlite3.Connection, room_id: str, limit: int = 100
 ) -> list[sqlite3.Row]:
     return db.execute(
-        "SELECT m.*, u.display_name FROM messages m "
+        "SELECT m.*, u.display_name, "
+        "rm.content AS reply_content, rm.type AS reply_type, "
+        "ru.display_name AS reply_display_name "
+        "FROM messages m "
         "JOIN users u ON u.id = m.user_id "
+        "LEFT JOIN messages rm ON rm.id = m.reply_to_id "
+        "LEFT JOIN users ru ON ru.id = rm.user_id "
         "WHERE m.room_id = ? AND m.expires_at > ? "
         "ORDER BY m.created_at DESC LIMIT ?",
         (room_id, _now(), limit),
     ).fetchall()
+
+
+# --- Reactions ---
+
+
+def add_reaction(
+    db: sqlite3.Connection, message_id: str, user_id: str, emoji: str
+) -> None:
+    db.execute(
+        "INSERT OR IGNORE INTO message_reactions (message_id, user_id, emoji, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (message_id, user_id, emoji, _now()),
+    )
+    db.commit()
+
+
+def remove_reaction(
+    db: sqlite3.Connection, message_id: str, user_id: str, emoji: str
+) -> None:
+    db.execute(
+        "DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
+        (message_id, user_id, emoji),
+    )
+    db.commit()
+
+
+def get_message_reactions(db: sqlite3.Connection, message_id: str) -> list[dict]:
+    rows = db.execute(
+        "SELECT emoji, COUNT(*) as count, GROUP_CONCAT(user_id) as user_ids "
+        "FROM message_reactions WHERE message_id = ? GROUP BY emoji",
+        (message_id,),
+    ).fetchall()
+    return [
+        {"emoji": r["emoji"], "count": r["count"], "user_ids": r["user_ids"].split(",")}
+        for r in rows
+    ]
+
+
+def get_reactions_for_messages(
+    db: sqlite3.Connection, message_ids: list[str]
+) -> dict[str, list[dict]]:
+    if not message_ids:
+        return {}
+    placeholders = ",".join("?" * len(message_ids))
+    rows = db.execute(
+        f"SELECT message_id, emoji, COUNT(*) as count, GROUP_CONCAT(user_id) as user_ids "
+        f"FROM message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id, emoji",
+        message_ids,
+    ).fetchall()
+    result: dict[str, list[dict]] = {}
+    for r in rows:
+        result.setdefault(r["message_id"], []).append(
+            {
+                "emoji": r["emoji"],
+                "count": r["count"],
+                "user_ids": r["user_ids"].split(","),
+            }
+        )
+    return result
 
 
 def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
@@ -674,6 +750,7 @@ def wipe_all_chat_data(db: sqlite3.Connection) -> None:
         "dm_participants",
         "meetup_attendees",
         "meetups",
+        "message_reactions",
         "messages",
         "rooms",
         "sessions",
