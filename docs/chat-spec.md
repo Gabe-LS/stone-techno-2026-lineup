@@ -210,52 +210,133 @@ Collected on login: canvas fingerprint hash + screen resolution + timezone + nav
 
 ---
 
-## Integration with Existing App
+## Navigation & UI
 
-### No Separate Page
+### WhatsApp-style three-screen flow
 
-Chat is **not** at `/chat/grand-hall`. It's integrated into the existing timetable and lineup views:
+Chat uses a familiar list → chat → back pattern. No slide-up panels, no swipeable tabs, no gesture conflicts.
 
-- **Timetable view**: each stage block gets a chat icon (bottom-right). Tap opens a slide-up chat panel for that stage.
-- **Meetup discovery**: a "Meetups" tab in the command bar shows upcoming meetups across all stages, filterable by time and stage.
-- **Bio overlay**: could include a "Fan meetup" button to create a meetup for fans of that artist (future).
+**Entry point:** "Chat" button in the command bar (desktop) and hamburger menu (mobile). User taps it, enters the chat world. Browser back or "← Back" returns to lineup/timetable.
 
-### Chat Panel
-
-Not a full page navigation. A bottom sheet / slide-up panel that overlays the timetable:
+### Screen 1: Room List
 
 ```
 ┌─────────────────────────────────────────┐
-│  Timetable (still visible, dimmed)      │
-│                                         │
+│  ← Back          Chats          🔍      │
 ├─────────────────────────────────────────┤
-│  ▼ Grand Hall · 🟢 47 online           │  ← Drag handle + room name
-│─────────────────────────────────────────│
+│  Stages │ Meetups │ DMs                 │  ← filter tabs
+├─────────────────────────────────────────┤
+│                                         │
+│  🟢 Grand Hall                    47 👤 │
+│     "this set is fire 🔥"     22:41     │
+│                                         │
+│  🟢 Eisbahn                      23 👤  │
+│     "anyone know who's next?"  22:39    │
+│                                         │
+│  🟢 Mischanlage                  89 👤  │
+│     "absolute banger"          22:43    │
+│                                         │
+│     Koksofenbatterie              8 👤  │
+│     No messages yet                     │
+│                                         │
+│  ...                                    │
+└─────────────────────────────────────────┘
+```
+
+- **Three filter tabs**: Stages (stage rooms + general), Meetups (active meetups sorted by time), DMs (conversations sorted by last message)
+- **Each row shows**: room name, online count, last message preview (truncated), timestamp
+- **Unread rooms**: bold name + unread count badge
+- **Stage rooms**: seeded from `stages` table, always present. Color dot matches stage color from `event_stages`
+- **Meetup rows**: show title, time, attendee count. Expired meetups disappear automatically
+- **DM rows**: show other user's display name + avatar
+- **Search** (🔍): filters rooms by name, meetup title, or user display name
+- **Not authenticated**: tapping any room triggers the auth flow first, then enters the room
+
+### Screen 2: Chat
+
+```
+┌─────────────────────────────────────────┐
+│  ← Chats     Grand Hall     🟢 47 👤   │
+├─────────────────────────────────────────┤
 │                                         │
 │  @techno_lover  22:41                   │
 │  this set is incredible 🔥              │
 │                                         │
-│  📍 MEETUP                              │
-│  Meet at the main bar · 23:00           │
-│  8 going · [I'm in] · [Open chat]      │
+│  ┌──────────────────────────────────┐   │
+│  │  📍 MEETUP                       │   │
+│  │  Main bar hangout · 23:00        │   │
+│  │  8 going              [I'm in]   │   │
+│  └──────────────────────────────────┘   │
 │                                         │
 │  @bass_head  22:43                      │
 │  anyone know who's playing next?        │
 │                                         │
+│  @techno_lover  22:44                   │
+│  [image]                                │
+│                                         │
 ├─────────────────────────────────────────┤
-│  [😀] [📷] [📍] [🤝]  Type...    [Send] │  ← Input bar
+│  [😀] [📷] [📍] [🤝]  Type...    [Send] │
 └─────────────────────────────────────────┘
 ```
 
-**Panel states:**
-- Collapsed (just the drag handle visible)
-- Half-height (default, timetable still visible)
-- Full-height (dragged up, timetable hidden)
+- **Full-screen chat view** — header with back arrow, room name, online count
+- **Back arrow** returns to room list (preserves scroll position)
+- **Messages**: avatar (generated), display name, timestamp, content
+- **Meetup cards inline**: appear in the stage room where they were created. Tapping the card navigates to the meetup's dedicated chat. "I'm in" button RSVPs without navigating.
+- **Input bar**: emoji picker, image upload, share location, create meetup. Fixed at bottom.
+- **Tap username**: opens option to send DM
+- **Long-press message**: opens report option
 
-**Navigation within the panel:**
-- Room selector (swipe or tabs): stage rooms, general, DMs
-- Meetup cards are inline in the stage room chat
-- Tapping "Open chat" on a meetup card navigates to the meetup's dedicated chat room
+### Screen 3: Meetup Chat
+
+Same layout as Screen 2 but with meetup info in the header:
+
+```
+┌─────────────────────────────────────────┐
+│  ← Grand Hall    Main bar hangout       │
+│  23:00 · 8 going · Near GH entrance    │
+├─────────────────────────────────────────┤
+│                                         │
+│  @organizer  22:50                      │
+│  I'll be wearing a black cap            │
+│                                         │
+│  @new_friend  22:52                     │
+│  on my way!                             │
+│                                         │
+├─────────────────────────────────────────┤
+│  [😀] [📷] [📍]        Type...    [Send] │
+└─────────────────────────────────────────┘
+```
+
+- **Back arrow** returns to the stage room where the meetup was created
+- **Header** shows meetup title, time, attendee count, location label
+- **Only attendees** can read and write
+- **No 🤝 button** in input bar (can't create a meetup inside a meetup)
+
+### Desktop Layout
+
+On screens wider than 768px, show the room list and chat side by side (like WhatsApp Web):
+
+```
+┌──────────────┬──────────────────────────────┐
+│  Chats   🔍  │  Grand Hall       🟢 47 👤  │
+├──────────────┤──────────────────────────────┤
+│ Stages│Meet│DM│                              │
+├──────────────┤  @techno_lover  22:41        │
+│              │  this set is fire 🔥          │
+│ 🟢 Grand Hall│                              │
+│ 🟢 Eisbahn   │  📍 MEETUP                   │
+│ 🟢 Mischanl. │  Main bar · 23:00 · 8 going │
+│   Koksofenb. │                              │
+│   Salzlager  │  @bass_head  22:43           │
+│   Werkss.    │  anyone know who's next?     │
+│              │                              │
+│              ├──────────────────────────────┤
+│              │ [😀][📷][📍][🤝] Type… [Send] │
+└──────────────┴──────────────────────────────┘
+```
+
+Room list is a persistent sidebar (~300px). Clicking a room loads it in the main panel. Active room is highlighted in the sidebar.
 
 ---
 
@@ -313,7 +394,7 @@ Uploaded as multipart. Server processes: validate MIME + magic bytes, resize lon
 ```json
 { "lat": 51.4862, "lng": 7.0442, "label": "Near Grand Hall entrance" }
 ```
-Browser Geolocation API. Rendered as a static map tile (OpenStreetMap) or tappable link.
+Browser Geolocation API. Rendered as a tappable card with pin icon and label — opens Google/Apple Maps on tap.
 
 ### meetup_invite
 ```json
@@ -738,13 +819,27 @@ python-multipart      # File uploads
 |---|---|---|
 | emoji-mart (standalone) | Emoji picker | ~40KB gzip |
 
-Everything else is vanilla JS. No frameworks. Chat UI is generated by `render.py` as part of the existing HTML, same as all other frontend code.
+Everything else is vanilla JS. No frameworks. Chat UI is vanilla HTML/CSS/JS, either generated by `render.py` as part of the existing page or served as a separate lightweight HTML file for the chat views.
 
 ### Client-Side State
 
 Messages exist only in the live DOM. No localStorage, no IndexedDB for messages. When a message expires (`messages_expired` event), the DOM element is removed. When the tab closes, messages are gone.
 
 User session (cookie) persists across tab closes. On reopen, the client reconnects and fetches the last 60 min of messages for the current room.
+
+### Routing
+
+Chat views use hash-based routing within the existing page (no full page reload):
+
+| Hash | Screen |
+|---|---|
+| `#chat` | Room list (Stages tab) |
+| `#chat/meetups` | Room list (Meetups tab) |
+| `#chat/dms` | Room list (DMs tab) |
+| `#chat/room/{room_id}` | Chat view for a room |
+| `#chat/dm/{user_id}` | DM conversation |
+
+Browser back button navigates naturally through the hash history.
 
 ---
 
