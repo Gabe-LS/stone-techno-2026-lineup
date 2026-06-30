@@ -846,12 +846,9 @@ Browser back button navigates naturally through the hash history.
 ## Resolved Decisions
 
 1. **Avatars**: generated (initials on a color derived from user ID). No custom uploads in v1 — zero moderation needed.
-2. **Data retention**: wipe everything (including bans) 30 days after event end. Clean slate each edition. No data survives between editions.
+2. **Data retention**: wipe everything (all data including bans) 30 days after event end. Clean slate each edition.
 3. **Map tiles**: tappable link styled as a card ("Open in Maps"). Zero infrastructure.
 4. **GIF support**: deferred to v2. Text + images + emoji + location + meetups is enough for v1.
 5. **Notifications**: DM notifications (immediate) + meetup reminders (10 min before). No stage room notifications.
-
-## Open Decisions
-
-1. **Admin tooling**: minimal admin page at `/chat/admin` with pending reports + ban/dismiss buttons, or CLI/database access only?
-2. **Slow mode**: auto-activate in rooms with >100 messages/minute, or leave stage rooms unthrottled?
+6. **Admin tooling**: minimal admin page at `/chat/admin` — list of pending reports with ban/dismiss buttons, protected by admin token.
+7. **Slow mode**: no throttling in v1. Stage rooms are intentionally chaotic. Can be added as a server-side config toggle later if needed.
