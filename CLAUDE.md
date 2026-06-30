@@ -11,6 +11,9 @@ python stone_techno_companion.py
 # Regenerate HTML only (fast — no network, no scraping)
 python stone_techno_companion.py --render-only --no-photos
 
+# Fetch YouTube sets for all artists (separate step, ~50 min)
+python fetch_videos.py
+
 # Deploy content to production (rsync, no container restart needed)
 python stone_techno_companion.py --render-only --deploy
 ```
@@ -23,26 +26,28 @@ These are not pip-installable and must be present on the system:
 - **libvips**: `brew install vips` (macOS) — required by pyvips for image processing
 - **ssimulacra2**: binary must be in PATH — used for perceptual quality targeting during AVIF encoding
 
-Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastapi`, `uvicorn[standard]`, `pywebpush` (server).
+Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastapi`, `uvicorn[standard]`, `pywebpush` (server); `yt-dlp` (video discovery).
 
 ## Architecture
 
 ### Data flow
 
 1. `stone_techno_companion.py` orchestrates: scrape → enrich → process photos → render HTML + timetable.json
-2. `lineup.db` (SQLite) caches all scraped data — follower counts and photos are only fetched once unless `--refresh-*` flags are used
-3. `scraper/overrides.toml` provides manual corrections (artist links) and editorial data (floor curators) applied after scraping, before enrichment
-4. Output is a single HTML file (`output/lineup.html`) + AVIF photos (`output/photos/`) + `output/timetable.json`
+2. `lineup.db` (SQLite) caches all scraped data — follower counts, RA bios, and photos are only fetched once unless `--refresh-*` flags are used
+3. `scraper/overrides.toml` provides manual corrections (artist links), editorial data (floor curators), and YouTube video overrides
+4. `fetch_videos.py` discovers YouTube sets via yt-dlp (run separately, outputs `videos.json` + thumbnails)
+5. Output is a single HTML file (`output/lineup.html`) + AVIF photos (`output/photos/`) + `output/timetable.json` + `output/thumbs/` + `output/videos.json`
 
 ### Key files
 
 | File | Role |
 |---|---|
-| `scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify scrapers |
+| `scraper/scrape.py` | Lineup parser + SoundCloud/Instagram/Spotify/Resident Advisor scrapers |
 | `scraper/db.py` | SQLite schema, upserts, overrides, queries |
 | `scraper/images.py` | Photo resize (pyvips lanczos3) + AVIF encode (ssimulacra2 target 78) |
 | `scraper/render.py` | HTML generation — line-up list + timetable grid, CSS, JS, modals, hearts, schedule, push notifications. SVG icons deduplicated via `<symbol>`/`<use>` sprite |
 | `scraper/timetable_json.py` | Generates `timetable.json` mapping schedule slot UUIDs to set times (used by push notification scheduler and ICS endpoint) |
+| `fetch_videos.py` | YouTube set discovery via yt-dlp — searches, selects top sets, downloads AVIF thumbnails. Outputs `output/videos.json` + `output/thumbs/` |
 | `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
 | `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push notification scheduler + ICS calendar export |
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |
@@ -50,15 +55,17 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 
 ### Two deploy paths
 
-- **Content** (HTML + photos + timetable.json + sw.js + manifest.json): `--deploy` flag rsyncs to VPS static dir. No container restart — files are volume-mounted.
+- **Content** (HTML + photos + thumbs + timetable.json + sw.js + manifest.json): `--deploy` flag rsyncs to VPS static dir. No container restart — files are volume-mounted.
 - **Server code**: push to `main` with changes in `server/` triggers GitHub Actions → SSH → `git pull` + `docker compose up -d --build`.
 
 ## Generated Artifacts (gitignored)
 
-- `lineup.db` — SQLite cache of artists, sections, follower counts
+- `lineup.db` — SQLite cache of artists, sections, follower counts, RA data
 - `output/lineup.html` — generated page (~580KB with timetable)
 - `output/photos/*.avif` — processed artist photos (~100 files)
 - `output/timetable.json` — slot UUID → set time mapping for push notifications
+- `output/videos.json` — YouTube set references per artist (keyed by overlay_id)
+- `output/thumbs/*.avif` — YouTube video thumbnails (240px max, AVIF)
 
 These are regenerable. The source of truth is the live website + `overrides.toml`.
 
@@ -84,6 +91,31 @@ The page includes both a line-up list and a timetable grid, toggled via the comm
 - **Contrast**: all text/icon colors pass WCAG 2.1 AA
 
 Floor order is defined in `canonical_floor_order` in `render.py` (alphabetical, 7 floors).
+
+## Resident Advisor Integration
+
+RA profiles are discovered via GraphQL API (`ra.co/graphql`) — no HTML scraping. The pipeline searches by artist name, fetches the profile with social links, and validates matches by comparing SoundCloud/Instagram handles against the DB. Stored fields: `ra` (URL), `ra_followers` (integer), `ra_bio` (biography text). Bio text is cleaned at scrape time: `\r\n` normalized, hard wraps joined, booking/contact info stripped.
+
+## YouTube Sets
+
+`fetch_videos.py` discovers DJ sets on YouTube via yt-dlp. Run separately from the main pipeline:
+
+```bash
+python fetch_videos.py
+```
+
+Selection algorithm: if 5+ videos with >= 5K views exist in the last 5 years, keep all. Otherwise expand to 15 years, starting at 50K view threshold and lowering by 10K until 5 videos found. Max 2 videos per channel. Videos are sorted by views descending.
+
+Overrides in `scraper/overrides.toml`:
+- `[youtube_names]` — search name aliases (e.g. `"Serge" = "Serge Clone"`)
+- `[youtube_videos]` — forced video IDs, skips search entirely
+- `[youtube_videos_add]` — extra video IDs appended after search (bypass all filters)
+
+Output: `output/videos.json` (keyed by overlay_id) + `output/thumbs/*.avif` (240px max, pyvips lanczos3). The renderer reads `videos.json` at build time and embeds video data into `ARTIST_BIOS` JS lookup.
+
+## Artist Bio Overlay
+
+Clicking an artist's name or photo in the lineup opens a modal overlay with photo (128px desktop, 96px mobile), name, RA biography (booking info stripped), and YouTube sets with thumbnails. Scroll blocking uses `overscroll-behavior:contain` on the overlay + `wheel` event `preventDefault` outside the modal box.
 
 ## Working on the HTML/CSS/JS
 
