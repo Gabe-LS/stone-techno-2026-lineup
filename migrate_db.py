@@ -73,9 +73,13 @@ def migrate() -> None:
             id         TEXT PRIMARY KEY,
             name       TEXT NOT NULL,
             url        TEXT,
+            website    TEXT,
             start_date TEXT,
             end_date   TEXT,
-            timezone   TEXT NOT NULL DEFAULT 'Europe/Berlin'
+            timezone   TEXT NOT NULL DEFAULT 'Europe/Berlin',
+            address    TEXT,
+            latitude   REAL,
+            longitude  REAL
         );
         CREATE TABLE IF NOT EXISTS artists_new (
             id                TEXT PRIMARY KEY,
@@ -100,7 +104,10 @@ def migrate() -> None:
             name        TEXT NOT NULL,
             color       TEXT,
             description TEXT,
-            about       TEXT
+            about       TEXT,
+            address     TEXT,
+            latitude    REAL,
+            longitude   REAL
         );
         CREATE TABLE IF NOT EXISTS location_notes (
             location_id TEXT NOT NULL REFERENCES locations_new(id),

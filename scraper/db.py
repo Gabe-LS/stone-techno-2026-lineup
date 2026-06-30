@@ -25,9 +25,13 @@ def init_db(db: sqlite3.Connection) -> None:
             id         TEXT PRIMARY KEY,
             name       TEXT NOT NULL,
             url        TEXT,
+            website    TEXT,
             start_date TEXT,
             end_date   TEXT,
-            timezone   TEXT NOT NULL DEFAULT 'Europe/Berlin'
+            timezone   TEXT NOT NULL DEFAULT 'Europe/Berlin',
+            address    TEXT,
+            latitude   REAL,
+            longitude  REAL
         );
         CREATE TABLE IF NOT EXISTS artists (
             id                TEXT PRIMARY KEY,
@@ -52,7 +56,10 @@ def init_db(db: sqlite3.Connection) -> None:
             name        TEXT NOT NULL,
             color       TEXT,
             description TEXT,
-            about       TEXT
+            about       TEXT,
+            address     TEXT,
+            latitude    REAL,
+            longitude   REAL
         );
         CREATE TABLE IF NOT EXISTS location_notes (
             location_id TEXT NOT NULL REFERENCES locations(id),
@@ -96,17 +103,23 @@ def init_db(db: sqlite3.Connection) -> None:
 
 def ensure_event(db: sqlite3.Connection, event_id: str, name: str, **kwargs) -> None:
     db.execute(
-        "INSERT INTO events (id, name, url, start_date, end_date, timezone) "
-        "VALUES (?, ?, ?, ?, ?, ?) "
+        "INSERT INTO events (id, name, url, website, start_date, end_date, timezone, address, latitude, longitude) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET name=excluded.name, url=excluded.url, "
-        "start_date=excluded.start_date, end_date=excluded.end_date, timezone=excluded.timezone",
+        "website=excluded.website, start_date=excluded.start_date, end_date=excluded.end_date, "
+        "timezone=excluded.timezone, address=excluded.address, "
+        "latitude=excluded.latitude, longitude=excluded.longitude",
         (
             event_id,
             name,
             kwargs.get("url"),
+            kwargs.get("website"),
             kwargs.get("start_date"),
             kwargs.get("end_date"),
             kwargs.get("timezone", "Europe/Berlin"),
+            kwargs.get("address"),
+            kwargs.get("latitude"),
+            kwargs.get("longitude"),
         ),
     )
     db.commit()
