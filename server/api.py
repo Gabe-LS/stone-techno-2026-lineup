@@ -385,13 +385,8 @@ async def lifespan(app: FastAPI):
     prune_task = asyncio.create_task(_prune_expired_sessions())
     push_task = asyncio.create_task(_push_notification_scheduler())
     chat_purge_task = None
-    try:
-        from chat_api import mount_chat
-
-        chat_purge_coro = mount_chat(app)
-        chat_purge_task = asyncio.create_task(chat_purge_coro())
-    except Exception:
-        logging.getLogger(__name__).warning("Chat module not loaded", exc_info=True)
+    if _chat_purge_coro:
+        chat_purge_task = asyncio.create_task(_chat_purge_coro())
     yield
     task.cancel()
     prune_task.cancel()
@@ -915,6 +910,15 @@ async def serve_bios():
     if file_path.exists():
         return FileResponse(file_path, media_type="application/json")
     raise HTTPException(404, "Not found")
+
+
+_chat_purge_coro = None
+try:
+    from chat_api import mount_chat
+
+    _chat_purge_coro = mount_chat(app)
+except Exception:
+    logging.getLogger(__name__).warning("Chat module not loaded", exc_info=True)
 
 
 @app.get("/{path:path}")

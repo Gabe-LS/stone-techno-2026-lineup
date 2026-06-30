@@ -18,3 +18,5 @@ lineup.db
 output/
 
 reviews/
+.env
+server/.env
