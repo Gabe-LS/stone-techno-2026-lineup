@@ -53,16 +53,20 @@ stone-techno-companion/
 
 ```
 events            — id, name, edition, source_url, website, start/end_date, timezone, address, lat/lng
+venues            — id, name, about, address, lat/lng
+stages            — id, name, about, venue_id (FK → venues)
+event_stages      — event_id + stage_id (PK), color (RGB), position
+stage_notes       — stage_id, date, note, position
+stage_details     — stage_id, label, value, position
 artists           — id, name, photo_url, photo_file, bio (markdown)
-artist_links      — artist_id, platform, url, follower_count, position
+artist_links      — artist_id + platform (PK), url, follower_count, position
 artist_sets       — id, artist_id, platform, url, title, view_count, duration_min, upload_date, position
-locations         — id, event_id, name, color (RGB), about (markdown), address, lat/lng
-location_notes    — location_id, date, note, position
-location_details  — location_id, label, value, position
-schedule          — artist_id, event_id, location_id, start_time, end_time, date, period, set_type
+schedule          — artist_id + event_id + start_time (PK), stage_id, end_time, date, period, set_type
 ```
 
-- **Artists, links, and sets are global** — shared across events. Schedule and locations are per-event.
+- **Artists, links, sets, stages, and venues are global** — shared across events
+- **Stages are reusable** — event-specific config (color, position) in `event_stages` junction
+- **Venues** hold physical addresses — stages reference their venue. Single-venue events use one venue or NULL
 - **artist_links** normalizes all platforms — adding Mixcloud or Bandcamp is just an INSERT
 - **artist_sets** normalizes all media sources — `platform` column for YouTube, SoundCloud, etc.
 - **events** split `name` ("Stone Techno") and `edition` ("2026") — page title derived as `"{name} {edition} Companion"`
@@ -263,4 +267,4 @@ stonetechno.deftlab.dev {
 
 ## Multi-Event Support
 
-The DB supports multiple events. Artists and their links/sets are global (shared across events). Schedule, locations, and notes are scoped per `event_id`. Each event needs its own scraper module — the scraper output format (`parsed` dict with `artists`, `sections`, `locations`, `assignments`) is the stable interface between event-specific scrapers and the generic pipeline.
+The DB supports multiple events. Artists, links, sets, stages, and venues are global (shared). Schedule and event_stages are scoped per event. Each event needs its own scraper module — the scraper output format (`parsed` dict with `artists`, `sections`, `locations`, `assignments`) is the stable interface between event-specific scrapers and the generic pipeline.

@@ -58,28 +58,31 @@ Python dependencies: `playwright`, `beautifulsoup4`, `pyvips` (scraper); `fastap
 
 ```
 events            — id, name, edition, source_url, website, start/end_date, timezone, address, lat/lng
+venues            — id, name, about, address, lat/lng
+stages            — id, name, about, venue_id (FK → venues)
+event_stages      — event_id + stage_id (PK), color (RGB), position
+stage_notes       — stage_id, date, note, position (daily annotations: curators, hosts)
+stage_details     — stage_id, label, value, position (static key-value facts for popup)
 artists           — id, name, photo_url, photo_file, bio (markdown)
-artist_links      — artist_id, platform, url, follower_count, position
+artist_links      — artist_id + platform (PK), url, follower_count, position
 artist_sets       — id, artist_id, platform, url, title, view_count, duration_min, upload_date, position
-locations         — id, event_id, name, color (RGB), about (markdown), address, lat/lng
-location_notes    — location_id, date, note, position (daily annotations: curators, hosts)
-location_details  — location_id, label, value, position (static key-value facts for popup)
-schedule          — artist_id, event_id, location_id, start_time, end_time, date, period, set_type
+schedule          — artist_id + event_id + start_time (PK), stage_id, end_time, date, period, set_type
 ```
 
 Key design decisions:
-- **Artists, artist_links, and artist_sets are global** — shared across events. Schedule and locations are per-event.
-- **artist_links** normalizes all social platforms — adding a new platform (Mixcloud, Bandcamp) is just an INSERT, no schema change
+- **Artists, artist_links, and artist_sets are global** — shared across events
+- **Stages are global, reusable across events** — the same physical stage can appear at multiple events. Event-specific config (color, display order) lives in `event_stages` junction
+- **Venues** hold physical addresses/coordinates — stages reference their venue via `venue_id`. Single-venue events: one venue, all stages point to it (or NULL, address on events table). Multi-venue events: multiple venues, each stage references its venue
+- **artist_links** normalizes all social platforms — adding a new platform is just an INSERT, no schema change
 - **artist_sets** normalizes all media sources — `platform` column distinguishes YouTube, SoundCloud, etc.
 - **`period`** is a free-text tag (day, night, afterhours, etc.), nullable for events without period splits
 - **`set_type`** supports dj, live, hybrid, b2b, talk, or NULL
-- **`edition`** on events separates the event name ("Stone Techno") from the instance ("2026", "XV"). Page title is derived as `"{name} {edition} Companion"`
-- **Floor colors** stored as RGB channels in `locations.color` (e.g. `"198, 249, 197"`), CSS generated dynamically at build time
-- **Location notes** hold per-day annotations (curators, hosts) shown below floor pills. Static info like "Hosted by FOLD London" is stored as notes on all event dates, not in a description field
+- **`edition`** on events separates the event name ("Stone Techno") from the instance ("2026", "XV"). Page title derived as `"{name} {edition} Companion"`
+- **Stage colors** stored as RGB channels in `event_stages.color` (e.g. `"198, 249, 197"`), CSS generated dynamically at build time. Per-event — same stage can be green at one festival, blue at another
+- **Stage notes** hold per-day annotations (curators, hosts) shown below floor pills
 - **SQLite pragmas**: `journal_mode=WAL` (concurrent reads), `foreign_keys=ON` (referential integrity)
 - **All queries use `sqlite3.Row`** — dict-like access by column name, no positional indexing
 - **Schedule PK** is `(artist_id, event_id, start_time)` — safe for multi-event
-- **Geo** on both events (single-venue) and locations (multi-venue like Dekmantel)
 
 ### Key files
 
@@ -158,7 +161,7 @@ Toggled via the command bar. Appears automatically when artists have `start_time
 - **B2B sets**: multiple artists in same time slot render as one card with per-artist hearts
 - **Schedule**: calendar icon on each card, server-synced via API
 - **ICS export**: button on each card → server endpoint serves `.ics` file
-- **Floor annotations**: "curated by" / "hosted by" from `location_notes` table, shown below floor pills per day
+- **Floor annotations**: "curated by" / "hosted by" from `stage_notes` table, shown below floor pills per day
 - **Artist schedule notes**: floor + time on every card, "Also" cross-references for multi-slot artists
 - **Hamburger menu**: mobile-only, preserves view in localStorage across reloads
 
@@ -212,4 +215,4 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 
 ## Multi-Event Support
 
-The DB supports multiple events via the `events` table. Artists and artist_links/artist_sets are global (shared). Schedule, locations, location_notes, and location_details are scoped per `event_id`. CLI flags: `--event-id`, `--event-name`, `--event-edition`. Each event needs its own scraper module — the scraper output format (`parsed` dict with `artists`, `sections`, `locations`, `assignments`) is the interface.
+The DB supports multiple events via the `events` table. Artists, artist_links, artist_sets, stages, and venues are global (shared). Schedule and event_stages are scoped per event. CLI flags: `--event-id`, `--event-name`, `--event-edition`. Each event needs its own scraper module — the scraper output format (`parsed` dict with `artists`, `sections`, `locations`, `assignments`) is the interface.
