@@ -1,8 +1,8 @@
-# Stone Techno Chat — Technical Specification
+# Festival Chat — Technical Specification
 
 ## Overview
 
-Privacy-first, ephemeral group chat integrated into the Stone Techno Festival companion app. Chat rooms map to festival stages, with dedicated meetup chats, DMs, and a general room. All messages auto-delete after 60 minutes. AI moderation on every message.
+Privacy-first, ephemeral group chat for the festival companion app. Chat rooms map to event stages, with dedicated meetup chats, DMs, and a general room. All messages auto-delete after 60 minutes. AI moderation on every message before broadcast.
 
 ## Architecture
 
@@ -43,13 +43,26 @@ SQLite, WAL mode, foreign keys ON. Separate from hearts.db — different lifecyc
 | provider | TEXT NOT NULL | 'google', 'apple', 'email' |
 | provider_id | TEXT NOT NULL | Google/Apple user ID, or email hash |
 | display_name | TEXT NOT NULL | 3-30 chars, alphanumeric + underscores + spaces |
-| avatar_url | TEXT | Nullable, URL to uploaded image |
 | session_id | TEXT | FK → hearts.db sessions (links chat identity to favorites) |
 | device_fingerprint | TEXT | Canvas hash + screen + timezone + language |
+| muted_until | TEXT | ISO 8601, nullable. Set on 2nd strike. |
 | created_at | TEXT NOT NULL | ISO 8601 |
 | last_seen | TEXT | Updated on disconnect |
 
 **UNIQUE** on `(provider, provider_id)` — one account per identity.
+
+Avatar is generated (initials on a color derived from user ID) — not stored, computed on render.
+
+### sessions
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT PK | UUID |
+| user_id | TEXT NOT NULL | FK → users.id |
+| token | TEXT NOT NULL UNIQUE | Signed session token |
+| expires_at | TEXT NOT NULL | ISO 8601 |
+
+Cookie-based. HTTP-only, Secure, SameSite=Strict. Expired sessions cleaned by the purge job.
 
 ### bans
 
@@ -70,11 +83,12 @@ Bans are checked by `(provider, provider_id)` AND `device_fingerprint` on every 
 | Column | Type | Notes |
 |---|---|---|
 | id | TEXT PK | Slug: stage ID, 'general', meetup UUID, or DM UUID |
+| event_id | TEXT NOT NULL | FK → events.id in lineup.db |
 | type | TEXT NOT NULL | 'stage', 'general', 'meetup', 'dm' |
 | name | TEXT NOT NULL | Display name |
 | created_at | TEXT NOT NULL | |
 
-Stage rooms and the general room are seeded from the `stages` table on startup. Meetup rooms are created by users. DM rooms are created on first message.
+Stage rooms and the general room are seeded from the `stages` table on startup, scoped by event. Meetup rooms are created by users. DM rooms are created on first message.
 
 ### messages
 
@@ -128,6 +142,18 @@ Stage rooms and the general room are seeded from the `stages` table on startup. 
 
 **PK:** `(room_id, user_id)`
 
+### blocks
+
+| Column | Type | Notes |
+|---|---|---|
+| blocker_id | TEXT NOT NULL | FK → users.id |
+| blocked_id | TEXT NOT NULL | FK → users.id |
+| created_at | TEXT NOT NULL | |
+
+**PK:** `(blocker_id, blocked_id)`
+
+Blocked users cannot send DMs to the blocker. Block check runs before DM creation and before delivering DM messages.
+
 ### reports
 
 | Column | Type | Notes |
@@ -173,10 +199,13 @@ Email magic links sent via [Resend](https://resend.com) (3,000 emails/month free
 ### Auth Flow
 
 ```
-User taps "Join Chat" on a stage
+User taps "Chat" in the command bar / hamburger menu
        │
        ▼
-Login screen: Google / Apple / Email
+Room list loads. User taps a room.
+       │
+       ▼
+Not authenticated? → Login screen: Google / Apple / Email
        │
        ▼
 Provider verifies identity → returns provider_id
@@ -197,12 +226,8 @@ Link to existing favorites session_id (if one exists in localStorage)
 Set signed HTTP-only session cookie
        │
        ▼
-Connected to chat
+Enter the room
 ```
-
-### Session Management
-
-Sessions stored in `chat.db` as a `sessions` table (id, user_id, token, expires_at). Cookie is HTTP-only, Secure, SameSite=Strict. Expired sessions cleaned by the purge job.
 
 ### Device Fingerprinting
 
@@ -248,7 +273,7 @@ Chat uses a familiar list → chat → back pattern. No slide-up panels, no swip
 - **Unread rooms**: bold name + unread count badge
 - **Stage rooms**: seeded from `stages` table, always present. Color dot matches stage color from `event_stages`
 - **Meetup rows**: show title, time, attendee count. Expired meetups disappear automatically
-- **DM rows**: show other user's display name + avatar
+- **DM rows**: show other user's display name + generated avatar
 - **Search** (🔍): filters rooms by name, meetup title, or user display name
 - **Not authenticated**: tapping any room triggers the auth flow first, then enters the room
 
@@ -281,10 +306,10 @@ Chat uses a familiar list → chat → back pattern. No slide-up panels, no swip
 
 - **Full-screen chat view** — header with back arrow, room name, online count
 - **Back arrow** returns to room list (preserves scroll position)
-- **Messages**: avatar (generated), display name, timestamp, content
+- **Messages**: generated avatar (initials), display name, timestamp, content
 - **Meetup cards inline**: appear in the stage room where they were created. Tapping the card navigates to the meetup's dedicated chat. "I'm in" button RSVPs without navigating.
 - **Input bar**: emoji picker, image upload, share location, create meetup. Fixed at bottom.
-- **Tap username**: opens option to send DM
+- **Tap username**: opens option to send DM or block user
 - **Long-press message**: opens report option
 
 ### Screen 3: Meetup Chat
@@ -356,6 +381,8 @@ Single WebSocket connection per user at `/ws/chat/{session_token}`. Multiplexed 
 | `leave_meetup` | `{ meetup_id }` | Cancel RSVP |
 | `create_meetup` | `{ stage_id, title, lat, lng, label, meetup_time, note }` | Create a meetup |
 | `open_dm` | `{ target_user_id }` | Open or create a DM |
+| `block_user` | `{ target_user_id }` | Block a user (prevents DMs) |
+| `unblock_user` | `{ target_user_id }` | Unblock a user |
 | `report_message` | `{ message_id, reason }` | Report a message |
 
 ### Server → Client
@@ -412,6 +439,9 @@ Every message passes through this pipeline before any other user sees it. No exc
 User sends message
        │
        ▼
+[0] Mute check (user.muted_until > now? → reject)
+       │
+       ▼
 [1] Rate limiter (max 5 msgs / 10s per user)
        │── THROTTLED → reject with "Slow down"
        ▼
@@ -456,20 +486,20 @@ Thresholds (configurable):
 | Strike | Action |
 |---|---|
 | 1st | Message blocked, user sees warning: "Your message was flagged. Repeated violations will result in a ban." |
-| 2nd | Message blocked, 30-minute mute (can read but not send) |
-| 3rd | Permanent ban. Account disabled. Provider ID + device fingerprint added to bans table. WebSocket disconnected with `banned` event. |
+| 2nd | Message blocked, 30-minute mute (`users.muted_until` set). User can read but not send. |
+| 3rd | Permanent ban. Provider ID + device fingerprint added to bans table. WebSocket disconnected with `banned` event. |
 
 Strikes persist for the duration of the event (not per-session). Drug-related word filter matches escalate faster: first drug match is strike 1, second is immediate ban.
 
 ### Image Moderation
 
 Images are moderated in two steps:
-1. **Server-side validation**: MIME type + magic bytes check. Only JPEG, PNG, WebP, AVIF accepted.
+1. **Server-side validation**: MIME type + magic bytes check. Only JPEG, PNG, WebP accepted.
 2. **OpenAI moderation**: The processed image is sent to `omni-moderation-latest` alongside any text content.
 
 ### Manual Reporting
 
-Users can report any message. The report saves a plaintext snapshot of the message content (survives the 60-min deletion). Admin reviews via CLI or a simple admin endpoint. Reports resolved as 'actioned' (ban) or 'dismissed'. Snapshots purged 30 days after resolution.
+Users can report any message via long-press. The report saves a plaintext snapshot of the message content (survives the 60-min deletion). Admin reviews via the admin page at `/chat/admin`. Reports resolved as 'actioned' (ban) or 'dismissed'. Snapshots purged 30 days after resolution.
 
 ---
 
@@ -479,7 +509,7 @@ Meetups are first-class entities, not just messages.
 
 ### Creating a Meetup
 
-1. User taps the 🤝 button in a stage room
+1. User taps the 🤝 button in a stage room's input bar
 2. Form: title, location (map pin or current GPS), time, optional note
 3. Server creates:
    - A `meetups` row
@@ -495,11 +525,11 @@ Meetups are first-class entities, not just messages.
 
 ### Meetup Chat
 
-Each meetup has its own dedicated chat room. Only attendees can read and write. Tap "Open chat" on the meetup card to enter. Same message types, same moderation, same 60-min expiry on individual messages.
+Each meetup has its own dedicated chat room. Only attendees can read and write. Tapping the meetup card in a stage room navigates to the meetup's chat. Same message types, same moderation, same 60-min expiry on individual messages.
 
 ### Meetup Discovery
 
-A "Meetups" view (accessible from the command bar) shows all active meetups across all stages, sorted by time. Filterable by stage. Shows: title, location, time, attendee count, source stage.
+The "Meetups" tab in the room list shows all active meetups across all stages, sorted by time. Shows: title, location, time, attendee count, source stage.
 
 ---
 
@@ -507,15 +537,20 @@ A "Meetups" view (accessible from the command bar) shows all active meetups acro
 
 ### Creating a DM
 
-User taps another user's name in a chat room → option to "Send message". Server finds or creates a DM room between the two users.
+User taps another user's display name in a chat room → option to "Send message" or "Block". Server finds or creates a DM room between the two users. Blocked users cannot initiate or send DMs to the blocker.
 
 ### DM Privacy
 
 Only the two participants can see DM messages. DM messages follow the same 60-min expiry. If a user is banned, their side of all DMs is deleted.
 
-### DM Notifications
+### Blocking
 
-Reuse the existing push notification infrastructure (VAPID + service worker). When a DM arrives and the recipient's tab is in the background, send a push notification: "New message from @username".
+Users can block other users via the username tap menu. Blocking:
+- Prevents the blocked user from sending DMs to the blocker
+- Hides the blocked user's messages in stage rooms from the blocker (client-side filter)
+- Does not notify the blocked user
+
+Unblocking reverses these effects.
 
 ---
 
@@ -620,6 +655,18 @@ WHERE status IN ('actioned', 'dismissed')
 AND reviewed_at < datetime('now', '-30 days');
 ```
 
+### Post-Event Data Wipe
+
+30 days after `events.end_date`, a manual script (`wipe_chat.py`) deletes all chat data:
+
+```python
+# Deletes: users, sessions, rooms, messages, meetups, meetup_attendees,
+# dm_participants, blocks, reports, strikes, uploaded images.
+# Keeps: nothing. Clean slate for the next edition.
+```
+
+Run manually after confirming all reports are resolved. Could be automated via a cron job checking `events.end_date + 30 days`.
+
 ---
 
 ## REST API Endpoints
@@ -636,7 +683,7 @@ Base: `https://stonetechno.deftlab.dev/chat/api`
 | GET | `/auth/email/verify` | `?token=...` (magic link) | Sets cookie, redirects to app |
 | POST | `/auth/logout` | — | Clears cookie |
 | DELETE | `/auth/account` | — | Deletes user + all data |
-| PUT | `/auth/profile` | `{ display_name?, avatar? }` | `{ user }` |
+| PUT | `/auth/profile` | `{ display_name }` | `{ user }` |
 
 ### Rooms
 
@@ -644,7 +691,7 @@ Base: `https://stonetechno.deftlab.dev/chat/api`
 |---|---|---|
 | GET | `/rooms` | `[{ id, type, name, online_count }]` |
 | GET | `/rooms/:id/messages` | Last 60 min of messages, paginated |
-| GET | `/rooms/:id/online` | `[{ user_id, display_name, avatar_url }]` |
+| GET | `/rooms/:id/online` | `[{ user_id, display_name }]` |
 
 ### Meetups
 
@@ -668,9 +715,15 @@ Base: `https://stonetechno.deftlab.dev/chat/api`
 | Method | Endpoint | Body | Response |
 |---|---|---|---|
 | POST | `/upload/image` | Multipart (max 5MB) | `{ url, width, height }` |
-| POST | `/upload/avatar` | Multipart (max 500KB) | `{ avatar_url }` |
 
-### Reports (Admin)
+### Users
+
+| Method | Endpoint | Body | Response |
+|---|---|---|---|
+| POST | `/users/:id/block` | — | `{ success }` |
+| DELETE | `/users/:id/block` | — | `{ success }` |
+
+### Reports & Admin
 
 | Method | Endpoint | Body | Response |
 |---|---|---|---|
@@ -679,7 +732,7 @@ Base: `https://stonetechno.deftlab.dev/chat/api`
 | POST | `/admin/ban/:user_id` | `{ reason }` | `{ success }` |
 | POST | `/admin/unban/:user_id` | — | `{ success }` |
 
-Admin endpoints protected by a middleware checking user role.
+Admin endpoints and the admin page at `/chat/admin` are protected by an admin token (environment variable).
 
 ---
 
@@ -708,10 +761,10 @@ No API. Client-side Unicode emoji picker ([emoji-mart](https://github.com/missiv
 
 ### What the server stores
 
-- User: display name, avatar URL, provider type + provider ID, device fingerprint, creation date, last seen
-- Messages: plaintext content (not encrypted — deleted after 60 min), room, sender, timestamp
+- User: display name, provider type + provider ID, device fingerprint, creation date, last seen
+- Messages: plaintext content (deleted after 60 min), room, sender, timestamp
 - Report snapshots: plaintext copies of reported messages (max 30 days after resolution)
-- That's it. No IP logs. No read receipts. No analytics. No email stored (only hash for email auth).
+- That's it. No IP logs. No read receipts. No analytics. No email stored (only hash for email auth). No avatar files (generated on render).
 
 ### Why no encryption at rest
 
@@ -786,6 +839,7 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CHAT_SESSION_SECRET=${CHAT_SESSION_SECRET}
+      - CHAT_ADMIN_TOKEN=${CHAT_ADMIN_TOKEN}
       - VAPID_PRIVATE_KEY=/app/data/vapid_private.pem
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
       - VAPID_SUBJECT=${VAPID_SUBJECT}
@@ -846,7 +900,7 @@ Browser back button navigates naturally through the hash history.
 ## Resolved Decisions
 
 1. **Avatars**: generated (initials on a color derived from user ID). No custom uploads in v1 — zero moderation needed.
-2. **Data retention**: wipe everything (all data including bans) 30 days after event end. Clean slate each edition.
+2. **Data retention**: wipe everything 30 days after event end. Clean slate each edition.
 3. **Map tiles**: tappable link styled as a card ("Open in Maps"). Zero infrastructure.
 4. **GIF support**: deferred to v2. Text + images + emoji + location + meetups is enough for v1.
 5. **Notifications**: DM notifications (immediate) + meetup reminders (10 min before). No stage room notifications.
