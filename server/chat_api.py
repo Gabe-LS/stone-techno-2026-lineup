@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -685,7 +686,10 @@ async def get_avatar(user_id: str):
     return RawResponse(
         content=row["data"],
         media_type="image/avif",
-        headers={"Cache-Control": "public, max-age=300"},
+        headers={
+            "Cache-Control": "no-cache",
+            "ETag": hashlib.md5(row["data"]).hexdigest(),
+        },
     )
 
 

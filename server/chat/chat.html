@@ -2389,6 +2389,7 @@ async function initEditAvatarEditor(file) {
   const maxScale = Math.max(minScale * 6, 1);
   const initScale = minScale * 2;
   _editAvatarState = { file, previewFile, natW, natH, origW, origH, previewScale, scale: initScale, minScale, maxScale, x: 0, y: 0, size: sz };
+  dbg('[AVATAR] _editAvatarState SET', natW + 'x' + natH, 'previewScale:', previewScale);
   _editAvatarState.x = -(natW * initScale - sz) / 2;
   _editAvatarState.y = -(natH * initScale - sz) / 2;
 
@@ -2476,9 +2477,11 @@ async function saveProfile() {
     const body = {};
     if (displayName !== (currentUser?.display_name || '')) body.display_name = displayName || '';
     if (country !== (currentUser?.country || '')) body.country = country;
+    dbg('[PROFILE] saveProfile _editAvatarState:', !!_editAvatarState, '_editAvatarUrl:', _editAvatarUrl);
     if (_editAvatarState) {
       showToast('Processing photo...');
       const s = _editAvatarState;
+      dbg('[AVATAR] cropping from original', s.origW + 'x' + s.origH, 'scale:', s.scale, 'previewScale:', s.previewScale);
       const cropX = (-s.x / s.scale) * s.previewScale;
       const cropY = (-s.y / s.scale) * s.previewScale;
       const cropSize = (s.size / s.scale) * s.previewScale;
