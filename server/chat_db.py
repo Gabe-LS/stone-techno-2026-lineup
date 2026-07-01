@@ -461,7 +461,7 @@ def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
     image_paths: list[str] = []
     for msg in expired:
         by_room.setdefault(msg["room_id"], []).append(msg["id"])
-        if msg["type"] == "image":
+        if msg["type"] in ("image", "video"):
             import json
 
             content = json.loads(msg["content"])
@@ -472,9 +472,14 @@ def purge_expired_messages(db: sqlite3.Connection) -> list[dict]:
         db.execute("DELETE FROM messages WHERE expires_at <= ?", (now,))
         db.commit()
 
+    uploads_dir = Path(__file__).resolve().parent / "chat" / "uploads"
     for path_str in image_paths:
-        p = Path(path_str.lstrip("/"))
-        p.unlink(missing_ok=True)
+        filename = path_str.rsplit("/", 1)[-1]
+        (uploads_dir / filename).unlink(missing_ok=True)
+        stem = filename.rsplit(".", 1)[0]
+        (uploads_dir / f"{stem}_mod.webp").unlink(missing_ok=True)
+        for i in range(3):
+            (uploads_dir / f"{stem}_mod{i}.webp").unlink(missing_ok=True)
 
     return [{"room_id": rid, "message_ids": ids} for rid, ids in by_room.items()]
 

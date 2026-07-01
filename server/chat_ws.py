@@ -58,6 +58,21 @@ def _image_to_data_uri(rel_url: str) -> str | None:
         return None
 
 
+def _video_mod_frames(rel_url: str) -> list[str]:
+    filename = rel_url.rsplit("/", 1)[-1]
+    stem = filename.rsplit(".", 1)[0]
+    uris = []
+    for i in range(3):
+        path = _UPLOADS_DIR / f"{stem}_mod{i}.webp"
+        if path.is_file():
+            try:
+                b64 = base64.b64encode(path.read_bytes()).decode()
+                uris.append(f"data:image/webp;base64,{b64}")
+            except Exception:
+                pass
+    return uris
+
+
 class ChatRoom:
     def __init__(self):
         self.connections: dict[str, WebSocket] = {}
@@ -412,6 +427,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             image_url = _image_to_data_uri(rel_url)
                     except (json.JSONDecodeError, AttributeError):
                         pass
+                elif msg_type == "video":
+                    try:
+                        rel_url = json.loads(content).get("url")
+                        if rel_url:
+                            frames = _video_mod_frames(rel_url)
+                            if frames:
+                                image_url = frames
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
 
                 asyncio.create_task(
                     _moderate_and_broadcast(
@@ -639,7 +663,6 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
 async def purge_loop() -> None:
     while True:
-        await asyncio.sleep(30)
         try:
             db = get_chat_db()
             expired_msgs = purge_expired_messages(db)
@@ -666,3 +689,4 @@ async def purge_loop() -> None:
             purge_expired_sessions(db)
         except Exception:
             logger.exception("Purge loop error")
+        await asyncio.sleep(30)

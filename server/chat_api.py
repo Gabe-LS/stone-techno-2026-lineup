@@ -567,6 +567,93 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     }
 
 
+@router.post("/upload/video")
+async def upload_video(request: Request, file: UploadFile = File(...)):
+    user, db = _get_user_from_cookie(request)
+
+    if not file.content_type or not file.content_type.startswith("video/"):
+        raise HTTPException(400, "Only video files allowed")
+
+    data = await file.read()
+    if len(data) > 100 * 1024 * 1024:
+        raise HTTPException(400, "Max file size is 100MB")
+
+    upload_dir = Path(__file__).resolve().parent / "chat" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    token = secrets.token_hex(16)
+    filename = f"{token}.mp4"
+    out_path = upload_dir / filename
+    out_path.write_bytes(data)
+
+    import subprocess
+
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                str(out_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        info = json.loads(probe.stdout)
+        duration = float(info["format"].get("duration", 0))
+        if duration > 65:
+            out_path.unlink(missing_ok=True)
+            raise HTTPException(400, "Video must be 60 seconds or less")
+
+        video_stream = next(
+            (s for s in info["streams"] if s["codec_type"] == "video"), None
+        )
+        width = int(video_stream["width"]) if video_stream else 0
+        height = int(video_stream["height"]) if video_stream else 0
+    except HTTPException:
+        raise
+    except Exception:
+        width, height, duration = 0, 0, 0
+
+    for i, frac in enumerate([0.25, 0.5, 0.75]):
+        frame_path = upload_dir / f"{token}_mod{i}.webp"
+        seek = duration * frac if duration > 0 else 0
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "quiet",
+                    "-ss",
+                    str(seek),
+                    "-i",
+                    str(out_path),
+                    "-vf",
+                    "scale='min(800,iw)':'min(800,ih)':force_original_aspect_ratio=decrease",
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "60",
+                    str(frame_path),
+                ],
+                timeout=10,
+            )
+        except Exception:
+            pass
+
+    return {
+        "url": f"/chat/uploads/{filename}",
+        "width": width,
+        "height": height,
+        "duration": round(duration, 1),
+    }
+
+
 # --- Admin ---
 
 

@@ -186,7 +186,7 @@ def _get_api_headers() -> dict[str, str]:
 
 
 async def check_openai_moderation(
-    text: str, image_url: str | None = None
+    text: str, image_url: str | list[str] | None = None
 ) -> dict | None:
     if not os.environ.get("OPENAI_API_KEY"):
         return None
@@ -196,8 +196,9 @@ async def check_openai_moderation(
 
         client = _get_http_client()
         input_content: list[dict] = [{"type": "text", "text": text}]
-        if image_url:
-            input_content.append({"type": "image_url", "image_url": {"url": image_url}})
+        urls = [image_url] if isinstance(image_url, str) else (image_url or [])
+        for url in urls:
+            input_content.append({"type": "image_url", "image_url": {"url": url}})
 
         r = await client.post(
             "https://api.openai.com/v1/moderations",
@@ -355,7 +356,7 @@ def reload_word_filter() -> None:
 
 
 async def moderate_message(
-    db, user_id: str, text: str, image_url: str | None = None
+    db, user_id: str, text: str, image_url: str | list[str] | None = None
 ) -> dict:
     from chat_db import is_muted
 

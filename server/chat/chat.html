@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Chat</title>
+<script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual';</script>
 <style>
 :root {
   --color-text: #111;
@@ -30,7 +31,9 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .subtitle { font-size: var(--font-xs); color: #aaa; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .online { font-size: var(--font-xs); color: #aaa; flex-shrink: 0; }
-.content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.icon-user { vertical-align: -3px; }
+.content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-anchor: none; scrollbar-width: none; }
+.content::-webkit-scrollbar { display: none; }
 
 /* --- Tabs --- */
 .tabs { display: flex; border-bottom: 1px solid var(--color-border); background: var(--color-bg); }
@@ -55,7 +58,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .avatar-sm { width: 28px; height: 28px; font-size: var(--font-xs); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; flex-shrink: 0; }
 
 /* --- Messages (bubble style) --- */
-.messages { padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.messages { padding: 16px 12px 8px; display: flex; flex-direction: column; gap: 2px; min-height: 100%; justify-content: flex-end; }
 .msg { display: flex; gap: 8px; padding: 2px 0 14px; align-items: flex-end; }
 .msg.msg-mine { justify-content: flex-end; }
 .msg-bubble { position: relative; padding: 10px 12px 24px; max-width: 75%; min-width: 80px; display: inline-block; word-break: break-word; }
@@ -65,30 +68,43 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .msg-name { font-weight: 600; font-size: var(--font-xs); cursor: pointer; }
 .msg-time { position: absolute; bottom: 10px; right: 12px; font-size: 10px; color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.4; }
-.msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius); margin-top: 4px; cursor: zoom-in; display: block; }
-.msg-location { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-top: 4px; text-decoration: none; color: inherit; font-size: var(--font-sm); }
+.msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius); margin-top: 4px; display: block; }
+.msg-video-wrap { position: relative; display: inline-block; margin-top: 4px; }
+.msg-video { max-width: 260px; max-height: 260px; border-radius: var(--radius); display: block; }
+.msg-video-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 48px; height: 48px; color: #fff; filter: drop-shadow(0 1px 4px rgba(0,0,0,0.5)); pointer-events: none; transition: opacity 0.15s; }
+.msg-video-wrap.playing .msg-video-play { opacity: 0; }
+.msg-video-fullscreen { position: absolute; bottom: 12px; right: 12px; width: 22px; height: 22px; color: #fff; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7)); cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.msg-video-wrap.playing .msg-video-fullscreen { opacity: 0.8; }
 .msg-pending { opacity: 0.5; }
 
-/* --- Meetup card --- */
-.meetup-card { background: var(--color-surface); border-radius: var(--radius); padding: 12px; margin-top: 4px; cursor: pointer; }
-.meetup-card:active { background: var(--color-surface-hover); }
-.meetup-card .meetup-label { font-size: var(--font-xs); color: var(--color-accent); font-weight: 700; margin-bottom: 4px; }
-.meetup-card .meetup-title { font-weight: 600; font-size: var(--font-sm); }
-.meetup-card .meetup-meta { font-size: var(--font-xs); color: var(--color-muted); margin-top: 4px; }
+/* --- Shared card (meetup + location) --- */
+.msg-card { background: var(--color-surface); border-radius: var(--radius); padding: 12px; margin-top: 4px; width: 260px; display: block; text-decoration: none; color: inherit; }
+.msg-card:active { background: var(--color-surface-hover); }
+.msg-card .card-label { font-size: var(--font-xs); color: var(--color-accent); font-weight: 700; margin-bottom: 4px; }
+.msg-card .card-title { font-weight: 600; font-size: var(--font-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-card .card-meta { font-size: var(--font-xs); color: var(--color-muted); margin-top: 4px; }
+.msg-card.card-meetup { background: #fde8e8; box-shadow: inset 0 0 0 1px var(--color-accent); }
+.msg-card.card-location { background: #e8f4f0; box-shadow: inset 0 0 0 1px #2a9d8f; }
+.msg-card.card-location .card-label { color: #2a9d8f; }
 
 /* --- Input bar --- */
 .input-bar { display: flex; align-items: center; gap: 4px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-bg); flex-shrink: 0; position: relative; }
-.input-bar button { background: none; border: none; font-size: 20px; padding: 6px; cursor: pointer; color: var(--color-muted); line-height: 1; }
-.input-bar input { flex: 1; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: 20px; font-size: var(--font-base); outline: none; }
-.input-bar input:focus { border-color: #999; }
-.input-bar .send { color: #111; font-weight: 700; }
-.action-toggle { font-size: 24px !important; font-weight: 300; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }
+.input-bar button { background: none; border: none; padding: 0; cursor: pointer; color: #555; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.input-bar button svg { width: 24px; height: 24px; }
+.input-wrap { flex: 1; position: relative; display: flex; align-items: center; }
+.input-wrap input { width: 100%; padding: 10px 44px 10px 14px; border: 1px solid var(--color-border); border-radius: 20px; font-size: var(--font-base); outline: none; }
+.input-wrap input:focus { border-color: #999; }
+.input-bar .emoji-btn { position: absolute; right: 10px; width: 22px; height: 22px; padding: 0; background: none; border: none; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; }
+.input-bar .emoji-btn svg { width: 22px; height: 22px; }
+.input-bar .send { color: #555; }
+.input-bar .send svg { width: 28px; height: 28px; }
 
 /* --- Action menu popup --- */
 .action-menu { display: none; position: absolute; bottom: 100%; left: 8px; margin-bottom: 4px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius); box-shadow: 0 -4px 12px rgba(0,0,0,0.1); z-index: 50; overflow: hidden; }
 .action-menu.open { display: flex; flex-direction: column; }
-.action-menu button { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border: none; background: none; font-size: var(--font-sm); cursor: pointer; white-space: nowrap; text-align: left; font-family: inherit; }
+.action-menu button { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border: none; background: none; font-size: var(--font-sm); cursor: pointer; white-space: nowrap; text-align: left; font-family: inherit; width: 100%; height: auto; color: var(--color-text); justify-content: flex-start; }
 .action-menu button:active { background: var(--color-surface); }
+@media (hover: hover) { .action-menu button:hover { background: var(--color-surface); } }
 
 /* --- Reply preview --- */
 .reply-preview { display: none; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-surface); flex-shrink: 0; }
@@ -113,11 +129,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .msg-other-bubble .reaction-pills { left: 8px; }
 .reaction-pill { display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 3px 8px; border: 1px solid #ccc; border-radius: 10px; background: #f0f0f0; font-size: 11px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.12); line-height: 1; text-align: center; }
 .reaction-pill.own { background: #fde8e8; border-color: #e53e3e; }
-.react-btn { opacity: 0; position: absolute; top: -10px; right: -10px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 26px; height: 26px; font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
-.msg:hover .react-btn { opacity: 1; }
-.msg-mine-bubble .react-btn { right: auto; left: -10px; }
-.reaction-picker { display: flex; gap: 2px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 20px; padding: 4px 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: absolute; z-index: 50; top: -36px; right: 0; }
-.msg-other-bubble .reaction-picker { right: auto; left: 0; }
+.react-btn { opacity: 0; position: absolute; top: 50%; transform: translateY(-50%); background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.1); transition: opacity 0.15s; color: #555; }
+.react-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+.msg-bubble:hover .react-btn, .react-btn.active { opacity: 1; }
+.msg-other-bubble .react-btn { left: auto; right: -38px; }
+.msg-mine-bubble .react-btn { right: auto; left: -38px; }
+.msg-bubble::after { content: ''; position: absolute; top: 0; bottom: 0; width: 88px; }
+.msg-other-bubble::after { right: -88px; }
+.msg-mine-bubble::after { left: -88px; }
+.reaction-picker { display: flex; gap: 2px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 20px; padding: 4px 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: fixed; z-index: 300; white-space: nowrap; }
 .reaction-picker button { background: none; border: none; font-size: 20px; padding: 4px 6px; cursor: pointer; border-radius: 50%; }
 @media (hover: hover) { .reaction-picker button:hover { background: var(--color-surface); } }
 
@@ -138,9 +158,21 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 }
 
 /* --- Image viewer --- */
-.image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; cursor: zoom-out; }
+.image-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .image-viewer.open { opacity: 1; }
 .image-viewer img { max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 4px; }
+.viewer-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; cursor: pointer; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); opacity: 0.8; }
+
+/* --- Video trim editor --- */
+.trim-editor video { width: 100%; border-radius: 0; display: block; background: #000; }
+.trim-controls { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.trim-track { position: relative; height: 32px; background: var(--color-surface); border-radius: 4px; cursor: pointer; }
+.trim-range { position: absolute; top: 0; height: 100%; background: rgba(0,0,0,0.12); border-radius: 4px; }
+.trim-handle { position: absolute; top: 0; width: 12px; height: 100%; background: var(--color-text); border-radius: 3px; cursor: ew-resize; z-index: 2; }
+.trim-handle::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 2px; height: 12px; background: #fff; border-radius: 1px; }
+.trim-playhead { position: absolute; top: 0; width: 2px; height: 100%; background: var(--color-accent); z-index: 1; pointer-events: none; }
+.trim-times { display: flex; justify-content: space-between; font-size: var(--font-xs); color: var(--color-muted); }
+.trim-duration { text-align: center; font-size: var(--font-sm); font-weight: 600; }
 
 /* --- Modal (meetup creation, etc.) --- */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
@@ -201,7 +233,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 </style>
 </head>
 <body>
-<div class="app" id="app"></div>
+<div class="app" id="app" style="visibility:hidden"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -215,6 +247,7 @@ let rooms = [];
 let messagesByRoom = {};
 let typingUsers = {};
 let onlineByRoom = {};
+const USER_ICON = '<svg class="icon-user" width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>';
 let replyTo = null;
 let isMobile = window.innerWidth < 768;
 let _toastTimer = null;
@@ -224,12 +257,14 @@ const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
 
 // --- Debug ---
 const DEBUG = true;
-function dbg(...args) { if (DEBUG) console.log('[chat]', ...args); }
+const _t0 = performance.now();
+function _ts() { return '+' + ((performance.now() - _t0) | 0) + 'ms'; }
+function dbg(...args) { if (DEBUG) console.log(_ts(), '[chat]', ...args); }
 function verify(label, condition, detail) {
   if (condition) {
-    console.log(`[chat] ✓ ${label}`, detail || '');
+    console.log(_ts(), `[chat] OK: ${label}`, detail || '');
   } else {
-    console.error(`[chat] ✗ FAIL: ${label}`, detail || '');
+    console.error(_ts(), `[chat] FAIL: ${label}`, detail || '');
   }
   return condition;
 }
@@ -368,7 +403,9 @@ function handleWSEvent(data) {
       if (currentUser && !data.online.find(u => u.user_id === currentUser.id))
         onlineByRoom[data.room_id].push({ user_id: currentUser.id });
       verify('room_history', data.messages, data.messages.length + ' messages for ' + data.room_id);
-      if (currentRoom === data.room_id) { renderMessages(); updateHeaderCount(); }
+      dbg('[CHAT] room_history received, room=' + data.room_id + ' currentRoom=' + currentRoom + ' msgs=' + data.messages.length);
+      if (currentRoom === data.room_id) { renderMessages(); scrollToBottom(); updateHeaderCount(); }
+      if (window._roomHistoryResolve) { window._roomHistoryResolve(); window._roomHistoryResolve = null; }
       updateSidebarCount(data.room_id);
       break;
     case 'message':
@@ -455,7 +492,7 @@ function renderRoomList() {
       <div class="room-info">
         <div class="room-name">${esc(r.name)}</div>
       </div>
-      <div class="room-meta"><div class="room-count">${count} 👤</div></div>
+      <div class="room-meta"><div class="room-count">${count} ${USER_ICON}</div></div>
     </li>`;
   }).join('');
 
@@ -505,7 +542,7 @@ function renderRoomItems() {
     return `<li class="room-item" data-room-id="${r.id}" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
       <div class="room-dot ${count > 0 ? 'online' : 'offline'}"></div>
       <div class="room-info"><div class="room-name">${esc(r.name)}</div></div>
-      <div class="room-meta"><div class="room-count">${count} 👤</div></div>
+      <div class="room-meta"><div class="room-count">${count} ${USER_ICON}</div></div>
     </li>`;
   }).join('');
 }
@@ -516,7 +553,7 @@ function updateSidebarCount(roomId) {
   if (!item) return;
   const countEl = item.querySelector('.room-count');
   const dotEl = item.querySelector('.room-dot');
-  if (countEl) countEl.textContent = count + ' 👤';
+  if (countEl) countEl.innerHTML = count + ' ' + USER_ICON;
   if (dotEl) { dotEl.classList.toggle('online', count > 0); dotEl.classList.toggle('offline', count === 0); }
 }
 
@@ -524,7 +561,7 @@ function updateHeaderCount() {
   if (!currentRoom) return;
   const count = (onlineByRoom[currentRoom] || []).length;
   const el = document.querySelector('.header .online');
-  if (el) el.textContent = count + ' 👤';
+  if (el) el.innerHTML = count + ' ' + USER_ICON;
 }
 
 async function loadMeetups() {
@@ -573,6 +610,7 @@ async function openRoom(roomId, roomName, roomType) {
   }
   renderChatView(roomName);
   location.hash = 'chat/room/' + roomId;
+  const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
   if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });
   } else {
@@ -581,10 +619,11 @@ async function openRoom(roomId, roomName, roomType) {
       messagesByRoom[roomId] = msgs;
       renderMessages();
       scrollToBottom();
-    } catch {}
+    } catch (e) { dbg('[CHAT] openRoom REST error:', e); }
     await connectWS();
     if (ws && ws.readyState === 1) wsSend('join_room', { room_id: roomId });
   }
+  await historyReady;
   verify('openRoom', currentRoom === roomId, 'currentRoom set to ' + roomId);
   verify('openRoom', document.getElementById('msg-input'), 'message input exists');
   verify('openRoom', document.getElementById('messages'), 'messages container exists');
@@ -601,16 +640,19 @@ function renderChatView(roomName) {
       <button class="reply-preview-close" onclick="cancelReply()">&times;</button>
     </div>
     <div class="input-bar">
-      <button class="action-toggle" onclick="toggleActionMenu()">+</button>
+      <button class="action-toggle" onclick="toggleActionMenu()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M15 12L12 12M12 12L9 12M12 12L12 9M12 12L12 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       <div class="action-menu" id="action-menu">
-        <button onclick="uploadImage(); closeActionMenu()">📷 Share Photo</button>
-        <button onclick="shareLocation(); closeActionMenu()">📍 Share Location</button>
-        ${showMeetupBtn ? '<button onclick="openMeetupModal(); closeActionMenu()">🤝 Create Meetup</button>' : ''}
+        ${showMeetupBtn ? '<button onclick="openMeetupModal(); closeActionMenu()"><svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z" stroke="currentColor" stroke-width="1.5"/><path d="M7 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.5" cy="16.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 9H21.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Create Meetup</button>' : ''}
+        <button onclick="shareLocation(); closeActionMenu()"><svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg> Share Location</button>
+        <button onclick="uploadImage(); closeActionMenu()"><svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M2 12.5001L3.75159 10.9675C4.66286 10.1702 6.03628 10.2159 6.89249 11.0721L11.1822 15.3618C11.8694 16.0491 12.9512 16.1428 13.7464 15.5839L14.0446 15.3744C15.1888 14.5702 16.7369 14.6634 17.7765 15.599L21 18.5001" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Share Photo</button>
+        <button onclick="uploadVideo(); closeActionMenu()"><svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 8.96533C9.5 8.48805 9.5 8.24941 9.59974 8.11618C9.68666 8.00007 9.81971 7.92744 9.96438 7.9171C10.1304 7.90525 10.3311 8.03429 10.7326 8.29239L15.4532 11.3271C15.8016 11.551 15.9758 11.663 16.0359 11.8054C16.0885 11.9298 16.0885 12.0702 16.0359 12.1946C15.9758 12.337 15.8016 12.449 15.4532 12.6729L10.7326 15.7076C10.3311 15.9657 10.1304 16.0948 9.96438 16.0829C9.81971 16.0726 9.68666 15.9999 9.59974 15.8838C9.5 15.7506 9.5 15.512 9.5 15.0347V8.96533Z" stroke="currentColor" stroke-width="1.5"/></svg> Share Video</button>
       </div>
-      <input id="msg-input" placeholder="Type a message..." autocomplete="off"
-        onkeydown="if(event.key==='Enter'){sendMessage();event.preventDefault()}">
-      <button onclick="openEmoji()">☺</button>
-      <button class="send" onclick="sendMessage()">→</button>
+      <div class="input-wrap">
+        <input id="msg-input" placeholder="Type a message..." autocomplete="off"
+          onkeydown="if(event.key==='Enter'){sendMessage();event.preventDefault()}">
+        <button class="emoji-btn" onclick="openEmoji()"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M9 16C9.85038 16.6303 10.8846 17 12 17C13.1154 17 14.1496 16.6303 15 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10.5C16 11.3284 15.5523 12 15 12C14.4477 12 14 11.3284 14 10.5C14 9.67157 14.4477 9 15 9C15.5523 9 16 9.67157 16 10.5Z" fill="currentColor"/><ellipse cx="9" cy="10.5" rx="1" ry="1.5" fill="currentColor"/></svg></button>
+      </div>
+      <button class="send" onclick="sendMessage()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M8 12C12.6863 12 11.3137 12 16 12M16 12L13 9M16 12L13 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>`;
 
   if (isMobile) {
@@ -618,7 +660,7 @@ function renderChatView(roomName) {
       <div class="header">
         <button class="back" onclick="leaveRoom()">←</button>
         <span class="title">${esc(roomName)}</span>
-        <span class="online">${onlineCount} 👤</span>
+        <span class="online">${onlineCount} ${USER_ICON}</span>
       </div>
       <div class="content" id="msg-scroll">
         <div class="messages" id="messages"></div>
@@ -631,7 +673,7 @@ function renderChatView(roomName) {
       mainPanel.innerHTML = `
         <div class="header">
           <span class="title">${esc(roomName)}</span>
-          <span class="online">${onlineCount} 👤</span>
+          <span class="online">${onlineCount} ${USER_ICON}</span>
         </div>
         <div class="content" id="msg-scroll">
           <div class="messages" id="messages"></div>
@@ -643,7 +685,8 @@ function renderChatView(roomName) {
   }
 
   renderMessages();
-  scrollToBottom();
+  dbg('[CHAT] renderChatView done, msgs=' + (messagesByRoom[currentRoom] || []).length);
+  if ((messagesByRoom[currentRoom] || []).length) scrollToBottom();
 
   verify('renderChatView', document.getElementById('msg-input'), 'input rendered');
   verify('renderChatView', document.getElementById('messages'), 'messages container rendered');
@@ -696,14 +739,22 @@ function renderMessage(m) {
       contentHtml = `<div class="msg-text">${escapeHtml(c.text || '')}</div>`;
     } else if (m.type === 'image') {
       contentHtml = `<img class="msg-image" src="${c.url}" loading="lazy" onclick="event.stopPropagation();openImageViewer('${c.url}')">`;
+    } else if (m.type === 'video') {
+      contentHtml = `<div class="msg-video-wrap" onclick="event.stopPropagation();toggleVideo(this)" ondblclick="event.stopPropagation()">
+        <video class="msg-video" src="${c.url}" playsinline preload="metadata"></video>
+        <svg class="msg-video-play" viewBox="0 0 24 24" fill="none"><path d="M20.4086 9.35258C22.5305 10.5065 22.5305 13.4935 20.4086 14.6474L7.59662 21.6145C5.53435 22.736 3 21.2763 3 18.9671L3 5.0329C3 2.72368 5.53435 1.26402 7.59661 2.38548L20.4086 9.35258Z" fill="currentColor"/></svg>
+        <svg class="msg-video-fullscreen" viewBox="0 0 24 24" fill="none" onclick="event.stopPropagation();expandVideo(this.closest('.msg-video-wrap'),'${c.url}')"><path d="M22 14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 22C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 2C6.22876 2 4.34315 2 3.17157 3.17157C2 4.34315 2 6.22876 2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 2C17.7712 2 19.6569 2 20.8284 3.17157C22 4.34315 22 6.22876 22 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>`;
     } else if (m.type === 'location') {
       const label = c.label || 'Shared location';
-      contentHtml = `<a class="msg-location" href="https://maps.google.com/?q=${c.lat},${c.lng}" target="_blank" rel="noopener">📍 ${escapeHtml(label)}</a>`;
+      contentHtml = `<a class="msg-card card-location" href="https://maps.google.com/?q=${c.lat},${c.lng}" target="_blank" rel="noopener" style="display:flex;gap:10px;align-items:center">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;color:#2a9d8f"><path d="M4 10.1433C4 5.64588 7.58172 2 12 2C16.4183 2 20 5.64588 20 10.1433C20 14.6055 17.4467 19.8124 13.4629 21.6744C12.5343 22.1085 11.4657 22.1085 10.5371 21.6744C6.55332 19.8124 4 14.6055 4 10.1433Z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg>
+        <div><div class="card-label">MY LOCATION</div><div class="card-title">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</div></div>
+      </a>`;
     } else if (m.type === 'meetup_invite') {
-      contentHtml = `<div class="meetup-card" onclick="openRoom('${c.meetup_id}','${escapeHtml(c.title)}','meetup')">
-        <div class="meetup-label">📍 MEETUP</div>
-        <div class="meetup-title">${escapeHtml(c.title)}</div>
-        <div class="meetup-meta">${fmtTime(c.meetup_time)}</div>
+      contentHtml = `<div class="msg-card card-meetup" onclick="openRoom('${c.meetup_id}','${escapeHtml(c.title)}','meetup')" style="cursor:pointer;display:flex;gap:10px;align-items:center">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;color:var(--color-accent)"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z" stroke="currentColor" stroke-width="1.5"/><path d="M7 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.5" cy="16.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 9H21.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <div style="min-width:0"><div class="card-label">MEETUP</div><div class="card-title">${escapeHtml(c.title)}</div><div class="card-meta">${fmtTime(c.meetup_time)}</div></div>
       </div>`;
     }
   } catch {
@@ -719,7 +770,7 @@ function renderMessage(m) {
   }
 
   const reactionsHtml = renderReactionPills(m.id, m.reactions);
-  const reactBtn = `<button class="react-btn" onclick="event.stopPropagation();showReactionPicker('${m.id}',this)">☺</button>`;
+  const reactBtn = `<button class="react-btn" onmouseenter="reactHoverIn('${m.id}',this)" onmouseleave="reactHoverOut()" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M9 16C9.85038 16.6303 10.8846 17 12 17C13.1154 17 14.1496 16.6303 15 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10.5C16 11.3284 15.5523 12 15 12C14.4477 12 14 11.3284 14 10.5C14 9.67157 14.4477 9 15 9C15.5523 9 16 9.67157 16 10.5Z" fill="currentColor"/><ellipse cx="9" cy="10.5" rx="1" ry="1.5" fill="currentColor"/></svg></button>`;
 
   const time = `<span class="msg-time">${fmtTime(m.created_at)}</span>`;
 
@@ -768,9 +819,17 @@ function updateReactionPills(msgId, reactions) {
   } else if (pillsEl) pillsEl.remove();
 }
 
+let _scrollLock = null;
 function scrollToBottom() {
   const el = document.getElementById('msg-scroll');
-  if (el) requestAnimationFrame(() => el.scrollTop = el.scrollHeight);
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+  requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+  if (_scrollLock) _scrollLock.disconnect();
+  const observer = new ResizeObserver(() => { el.scrollTop = el.scrollHeight; });
+  observer.observe(document.getElementById('messages'));
+  _scrollLock = observer;
+  setTimeout(() => { observer.disconnect(); _scrollLock = null; }, 1500);
 }
 
 function updateTypingIndicator() {
@@ -871,27 +930,48 @@ function cancelReply() {
 }
 
 // --- Reactions ---
-function showReactionPicker(msgId, btn) {
+let _reactDismissTimer = null;
+let _reactActiveBtn = null;
+
+function reactHoverIn(msgId, btn) {
+  clearTimeout(_reactDismissTimer);
+  const existing = document.getElementById('reaction-picker');
+  if (existing && existing._msgId === msgId) return;
   closeReactionPicker();
-  const msgEl = document.querySelector(`[data-msg-id="${msgId}"]`);
-  if (!msgEl) return;
+  _reactActiveBtn = btn;
+  btn.classList.add('active');
   const picker = document.createElement('div');
   picker.id = 'reaction-picker';
   picker.className = 'reaction-picker';
+  picker._msgId = msgId;
+  picker.onmouseenter = () => clearTimeout(_reactDismissTimer);
+  picker.onmouseleave = () => { _reactDismissTimer = setTimeout(closeReactionPicker, 500); };
   REACTION_KEYS.forEach(([emoji, key]) => {
     const b = document.createElement('button');
     b.textContent = emoji;
     b.onclick = (e) => { e.stopPropagation(); toggleReaction(msgId, key); closeReactionPicker(); };
     picker.appendChild(b);
   });
-  const bubble = msgEl.querySelector('.msg-bubble') || msgEl;
-  bubble.appendChild(picker);
-  const dismiss = (e) => { if (!e.target.closest('.reaction-picker')) { closeReactionPicker(); document.removeEventListener('click', dismiss); } };
-  setTimeout(() => document.addEventListener('click', dismiss), 10);
+  document.body.appendChild(picker);
+  const btnRect = btn.getBoundingClientRect();
+  const pickerW = picker.offsetWidth;
+  const centerX = btnRect.left + btnRect.width / 2 - pickerW / 2;
+  picker.style.left = Math.max(4, Math.min(centerX, window.innerWidth - pickerW - 4)) + 'px';
+  if (btnRect.top > 60) {
+    picker.style.bottom = (window.innerHeight - btnRect.top + 4) + 'px';
+  } else {
+    picker.style.top = (btnRect.bottom + 4) + 'px';
+  }
+}
+
+function reactHoverOut() {
+  _reactDismissTimer = setTimeout(closeReactionPicker, 200);
 }
 
 function closeReactionPicker() {
+  clearTimeout(_reactDismissTimer);
   document.getElementById('reaction-picker')?.remove();
+  if (_reactActiveBtn) { _reactActiveBtn.classList.remove('active'); _reactActiveBtn = null; }
 }
 
 function toggleReaction(msgId, emoji) {
@@ -977,10 +1057,12 @@ function shareLocation() {
   navigator.geolocation.getCurrentPosition(
     pos => {
       dbg('shareLocation: got position', pos.coords.latitude, pos.coords.longitude);
-      const content = JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' });
-      sendChatMessage('location', content);
-      verify('shareLocation', true, 'location message sent');
-      showToast('Location shared');
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      showConfirm('Share your location?', `${lat.toFixed(5)}, ${lng.toFixed(5)}`, () => {
+        sendChatMessage('location', JSON.stringify({ lat, lng, label: 'My location' }));
+        showToast('Location shared');
+      });
     },
     err => {
       dbg('shareLocation: error', err.code, err.message);
@@ -1025,6 +1107,285 @@ function uploadImage() {
   input.click();
 }
 
+let _mediabunny = null;
+async function loadMediabunny() {
+  if (!_mediabunny) {
+    dbg('[VIDEO] loading mediabunny...');
+    _mediabunny = await import('https://esm.sh/mediabunny@1.50.0');
+    dbg('[VIDEO] mediabunny loaded, exports:', Object.keys(_mediabunny));
+  }
+  return _mediabunny;
+}
+
+function fmtSec(s) { const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s % 60)).padStart(2, '0'); }
+
+function showTrimEditor(file, objectUrl, duration) {
+  return new Promise((resolve, reject) => {
+    dbg('[TRIM] opening editor, duration:', duration);
+    document.getElementById('trim-editor')?.remove();
+    const maxClip = 60;
+    let trimStart = 0;
+    let trimEnd = Math.min(duration, maxClip);
+
+    const overlay = document.createElement('div');
+    overlay.id = 'trim-editor';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `<div class="modal" style="max-width:480px" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span class="modal-title">Trim Video (max ${maxClip}s)</span>
+        <button class="modal-close" id="trim-cancel">&times;</button>
+      </div>
+      <div class="trim-editor">
+        <video id="trim-video" src="${objectUrl}" playsinline preload="auto"></video>
+        <div class="trim-controls">
+          <div class="trim-duration" id="trim-dur">${fmtSec(trimEnd - trimStart)} selected</div>
+          <div class="trim-track" id="trim-track">
+            <div class="trim-range" id="trim-range"></div>
+            <div class="trim-handle" id="trim-handle-start"></div>
+            <div class="trim-handle" id="trim-handle-end"></div>
+            <div class="trim-playhead" id="trim-playhead"></div>
+          </div>
+          <div class="trim-times">
+            <span id="trim-start-time">${fmtSec(0)}</span>
+            <span id="trim-end-time">${fmtSec(trimEnd)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn-primary" id="trim-confirm">Trim & Share</button>
+      </div>
+    </div>`;
+
+    const dismiss = () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); };
+    overlay.addEventListener('click', () => { dismiss(); reject(new Error('Cancelled')); });
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('open'));
+
+    const video = document.getElementById('trim-video');
+    const track = document.getElementById('trim-track');
+    const rangeEl = document.getElementById('trim-range');
+    const playhead = document.getElementById('trim-playhead');
+    const handleStart = document.getElementById('trim-handle-start');
+    const handleEnd = document.getElementById('trim-handle-end');
+    const durLabel = document.getElementById('trim-dur');
+    const startLabel = document.getElementById('trim-start-time');
+    const endLabel = document.getElementById('trim-end-time');
+
+    function updateUI() {
+      const startPct = (trimStart / duration) * 100;
+      const endPct = (trimEnd / duration) * 100;
+      rangeEl.style.left = startPct + '%';
+      rangeEl.style.width = (endPct - startPct) + '%';
+      handleStart.style.left = 'calc(' + startPct + '% - 6px)';
+      handleEnd.style.left = 'calc(' + endPct + '% - 6px)';
+      durLabel.textContent = fmtSec(trimEnd - trimStart) + ' selected';
+      startLabel.textContent = fmtSec(trimStart);
+      endLabel.textContent = fmtSec(trimEnd);
+    }
+
+    video.addEventListener('timeupdate', () => {
+      const pct = (video.currentTime / duration) * 100;
+      playhead.style.left = pct + '%';
+      if (video.currentTime >= trimEnd) { video.pause(); video.currentTime = trimStart; }
+    });
+
+    function makeDraggable(handle, getSet) {
+      const onMove = (e) => {
+        const rect = track.getBoundingClientRect();
+        const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+        const pct = Math.max(0, Math.min(1, x / rect.width));
+        const time = pct * duration;
+        getSet(time);
+        updateUI();
+      };
+      const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
+      handle.addEventListener('mousedown', (e) => { e.preventDefault(); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); });
+      handle.addEventListener('touchstart', (e) => { e.preventDefault(); document.addEventListener('touchmove', onMove); document.addEventListener('touchend', onUp); }, { passive: false });
+    }
+
+    makeDraggable(handleStart, (t) => {
+      trimStart = Math.max(0, Math.min(t, trimEnd - 1));
+      if (trimEnd - trimStart > maxClip) trimEnd = trimStart + maxClip;
+      video.currentTime = trimStart;
+    });
+    makeDraggable(handleEnd, (t) => {
+      trimEnd = Math.min(duration, Math.max(t, trimStart + 1));
+      if (trimEnd - trimStart > maxClip) trimStart = trimEnd - maxClip;
+      video.currentTime = trimEnd - 0.1;
+    });
+
+    track.addEventListener('click', (e) => {
+      if (e.target === handleStart || e.target === handleEnd) return;
+      const rect = track.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      video.currentTime = pct * duration;
+      video.play();
+    });
+
+    document.getElementById('trim-cancel').onclick = () => { dismiss(); reject(new Error('Cancelled')); };
+    document.getElementById('trim-confirm').onclick = () => {
+      dbg('[TRIM] confirmed, start:', trimStart.toFixed(1), 'end:', trimEnd.toFixed(1), 'duration:', (trimEnd - trimStart).toFixed(1));
+      dismiss();
+      resolve({ start: trimStart, end: trimEnd });
+    };
+
+    updateUI();
+    video.currentTime = 0;
+  });
+}
+
+async function processVideo(file) {
+  dbg('[VIDEO] processVideo start, file:', file.name, file.type, (file.size / 1024 / 1024).toFixed(1) + 'MB');
+
+  const vid = document.createElement('video');
+  vid.preload = 'metadata';
+  const objectUrl = URL.createObjectURL(file);
+  vid.src = objectUrl;
+  await new Promise((r, e) => {
+    vid.onloadedmetadata = r;
+    vid.onerror = (err) => { dbg('[VIDEO] metadata load error:', err); e(new Error('Cannot read video file')); };
+  });
+
+  const duration = vid.duration;
+  const srcW = vid.videoWidth;
+  const srcH = vid.videoHeight;
+  dbg('[VIDEO] metadata loaded, duration:', duration, 'resolution:', srcW + 'x' + srcH);
+
+  let trim = null;
+  if (duration > 62) {
+    dbg('[VIDEO] duration > 60s, opening trim editor');
+    trim = await showTrimEditor(file, objectUrl, duration);
+  }
+  URL.revokeObjectURL(objectUrl);
+
+  const srcBitrate = (file.size * 8) / duration;
+  const mb = await loadMediabunny();
+  const mbInput = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS });
+  const videoTrack = await mbInput.getPrimaryVideoTrack();
+  const audioTrack = await mbInput.getPrimaryAudioTrack().catch(() => null);
+  let srcFps = 30;
+  try {
+    const stats = await videoTrack.computePacketStats(100);
+    srcFps = Math.round(stats.averagePacketRate);
+    dbg('[VIDEO] packetStats: fps=' + srcFps + ' bitrate=' + (stats.averageBitrate / 1_000_000).toFixed(1) + 'Mbps count=' + stats.packetCount);
+  } catch (e) { dbg('[VIDEO] computePacketStats failed:', e.message); }
+  const srcAudioCodec = audioTrack ? await audioTrack.getCodec() : null;
+
+  const oversize = srcW > 1920 || srcH > 1080;
+  const highBitrate = srcBitrate > 10_000_000;
+  const highFps = srcFps > 30;
+  const needsAudioRecode = srcAudioCodec && srcAudioCodec !== 'aac';
+  const needsTranscode = oversize || highBitrate || highFps || needsAudioRecode || trim !== null;
+
+  dbg('[VIDEO] srcBitrate:', (srcBitrate / 1_000_000).toFixed(1) + 'Mbps, fps:', srcFps, 'audio:', srcAudioCodec,
+    'oversize:', oversize, 'highBitrate:', highBitrate, 'highFps:', highFps, 'audioRecode:', needsAudioRecode,
+    'needsTranscode:', needsTranscode, trim ? ('trim ' + trim.start.toFixed(1) + '-' + trim.end.toFixed(1)) : '');
+
+  if (!needsTranscode) {
+    dbg('[VIDEO] no processing needed, using original file');
+    return file;
+  }
+
+  showToast('Processing video...');
+
+  const output = new mb.Output({
+    format: new mb.Mp4OutputFormat(),
+    target: new mb.BufferTarget(),
+  });
+
+  let videoCodec = 'avc';
+  try {
+    const hevcSupport = await VideoEncoder.isConfigSupported({
+      codec: 'hvc1.1.6.L120.B0',
+      width: 1920, height: 1080,
+      bitrate: 3_000_000,
+      hardwareAcceleration: 'prefer-hardware',
+    });
+    if (hevcSupport.supported) videoCodec = 'hevc';
+    dbg('[VIDEO] HEVC support:', hevcSupport.supported);
+  } catch (e) { dbg('[VIDEO] HEVC check failed:', e.message); }
+  dbg('[VIDEO] selected codec:', videoCodec);
+
+  const videoOpts = { hardwareAcceleration: 'prefer-hardware' };
+  if (oversize) {
+    const scale = Math.min(1920 / srcW, 1080 / srcH);
+    videoOpts.width = Math.round(srcW * scale);
+    videoOpts.height = Math.round(srcH * scale);
+    videoOpts.fit = 'contain';
+  }
+  if (oversize || highBitrate) {
+    videoOpts.codec = videoCodec;
+    videoOpts.bitrate = videoCodec === 'hevc' ? 3_000_000 : 4_000_000;
+  }
+  if (highFps) {
+    videoOpts.frameRate = Math.round(srcFps / 2);
+    videoOpts.forceTranscode = true;
+    if (!videoOpts.codec) videoOpts.codec = videoCodec;
+    if (!videoOpts.bitrate) videoOpts.bitrate = videoCodec === 'hevc' ? 3_000_000 : 4_000_000;
+  }
+  dbg('[VIDEO] videoOpts:', JSON.stringify(videoOpts));
+
+  const audioOpts = needsAudioRecode ? { codec: 'aac', bitrate: 128_000 } : {};
+  const convOpts = { input: mbInput, output, video: videoOpts, audio: audioOpts };
+  if (trim) convOpts.trim = { start: trim.start, end: trim.end };
+
+  dbg('[VIDEO] initializing conversion...');
+  const conversion = await mb.Conversion.init(convOpts);
+
+  if (!conversion.isValid) {
+    dbg('[VIDEO] conversion not valid, discarded:', conversion.discardedTracks);
+    throw new Error('Cannot process this video format');
+  }
+  dbg('[VIDEO] conversion valid, utilized tracks:', conversion.utilizedTracks);
+
+  conversion.onProgress = (p) => {
+    dbg('[VIDEO] progress:', Math.round(p * 100) + '%');
+    showToast('Processing video ' + Math.round(p * 100) + '%...');
+  };
+
+  dbg('[VIDEO] executing conversion...');
+  await conversion.execute();
+
+  const buf = output.target.buffer;
+  dbg('[VIDEO] conversion done, output size:', (buf.byteLength / 1024 / 1024).toFixed(1) + 'MB');
+  return new File([buf], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' });
+}
+
+function uploadVideo() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'video/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    dbg('[VIDEO] file selected:', file.name, file.type, (file.size / 1024 / 1024).toFixed(1) + 'MB');
+    try {
+      const processed = await processVideo(file);
+      if (processed.size > 100 * 1024 * 1024) {
+        dbg('[VIDEO] rejected: processed size', (processed.size / 1024 / 1024).toFixed(1) + 'MB > 100MB');
+        showToast('Video too large (max 100MB)'); return;
+      }
+      dbg('[VIDEO] uploading', (processed.size / 1024 / 1024).toFixed(1) + 'MB...');
+      showToast('Uploading video...');
+      const form = new FormData(); form.append('file', processed);
+      const resp = await fetch(API + '/upload/video', { method: 'POST', body: form, credentials: 'include' });
+      dbg('[VIDEO] upload response status:', resp.status);
+      if (!resp.ok) {
+        const err = await resp.text();
+        dbg('[VIDEO] upload error:', err);
+        throw new Error('Upload failed: ' + resp.status);
+      }
+      const result = await resp.json();
+      dbg('[VIDEO] upload result:', result);
+      sendChatMessage('video', JSON.stringify(result));
+      showToast('Video shared');
+    } catch (e) {
+      dbg('[VIDEO] error:', e.message, e.stack);
+      showToast(e.message || 'Video upload failed', 5000);
+    }
+  };
+  input.click();
+}
+
 function openEmoji() { showToast('Emoji picker coming in v2'); }
 
 // --- Meetup modal ---
@@ -1032,7 +1393,12 @@ let _meetupCoords = null;
 
 function openMeetupModal() {
   document.getElementById('meetup-modal')?.remove();
-  const defaultTime = new Date(Date.now() + 3600000).toISOString().slice(0, 16);
+  const d = new Date(Math.ceil((Date.now() + 900000) / 900000) * 900000);
+  const defaultDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const defaultHour = d.getHours();
+  const defaultMin = d.getMinutes();
+  const hourOpts = Array.from({length: 24}, (_, i) => `<option value="${i}"${i === defaultHour ? ' selected' : ''}>${String(i).padStart(2, '0')}</option>`).join('');
+  const minOpts = [0, 15, 30, 45].map(m => `<option value="${m}"${m === defaultMin ? ' selected' : ''}>${String(m).padStart(2, '0')}</option>`).join('');
   const modal = document.createElement('div');
   modal.id = 'meetup-modal';
   modal.className = 'modal-overlay';
@@ -1045,7 +1411,12 @@ function openMeetupModal() {
       <label class="modal-label">Title</label>
       <input id="meetup-title" class="modal-input" placeholder="e.g. Drinks at the bar" maxlength="60">
       <label class="modal-label">Date & Time</label>
-      <input id="meetup-time" class="modal-input" type="datetime-local" value="${defaultTime}">
+      <div style="display:flex;gap:8px">
+        <input id="meetup-date" class="modal-input" type="date" value="${defaultDate}" style="flex:1">
+        <select id="meetup-hour" class="modal-input" style="width:auto">${hourOpts}</select>
+        <span style="align-self:center;color:var(--color-muted)">:</span>
+        <select id="meetup-min" class="modal-input" style="width:auto">${minOpts}</select>
+      </div>
       <label class="modal-label">Location</label>
       <div style="display:flex;gap:8px">
         <input id="meetup-location" class="modal-input" placeholder="e.g. Main bar area" style="flex:1">
@@ -1064,7 +1435,7 @@ function openMeetupModal() {
     modal.classList.add('open');
     verify('openMeetupModal', document.getElementById('meetup-modal'), 'modal in DOM');
     verify('openMeetupModal', document.getElementById('meetup-title'), 'title input exists');
-    verify('openMeetupModal', document.getElementById('meetup-time'), 'time input exists');
+    verify('openMeetupModal', document.getElementById('meetup-date'), 'date input exists');
     verify('openMeetupModal', document.getElementById('meetup-location'), 'location input exists');
   });
   document.getElementById('meetup-title').focus();
@@ -1081,12 +1452,15 @@ function useMeetupGPS() {
 
 function submitMeetup() {
   const title = document.getElementById('meetup-title').value.trim();
-  const timeVal = document.getElementById('meetup-time').value;
+  const dateVal = document.getElementById('meetup-date').value;
+  const hour = document.getElementById('meetup-hour').value;
+  const min = document.getElementById('meetup-min').value;
   const locationLabel = document.getElementById('meetup-location').value.trim();
   const note = document.getElementById('meetup-note').value.trim();
   if (!title) { showToast('Please enter a title'); return; }
-  if (!timeVal) { showToast('Please pick a date and time'); return; }
-  const payload = { stage_id: currentRoom, title, meetup_time: new Date(timeVal).toISOString() };
+  if (!dateVal) { showToast('Please pick a date'); return; }
+  const meetupDate = new Date(`${dateVal}T${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}:00`);
+  const payload = { stage_id: currentRoom, title, meetup_time: meetupDate.toISOString() };
   if (_meetupCoords) { payload.lat = _meetupCoords.lat; payload.lng = _meetupCoords.lng; }
   if (locationLabel) payload.label = locationLabel;
   if (note) payload.note = note;
@@ -1095,6 +1469,31 @@ function submitMeetup() {
   verify('submitMeetup', true, 'meetup "' + payload.title + '" submitted');
   closeMeetupModal();
   showToast('Meetup created!');
+}
+
+function showConfirm(title, detail, onConfirm) {
+  document.getElementById('confirm-dialog')?.remove();
+  const dismiss = () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); };
+  const overlay = document.createElement('div');
+  overlay.id = 'confirm-dialog';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">${escapeHtml(title)}</span>
+      <button class="modal-close" id="confirm-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      ${detail ? '<div style="color:var(--color-muted);font-size:var(--font-sm)">' + escapeHtml(detail) + '</div>' : ''}
+    </div>
+    <div class="modal-footer">
+      <button class="modal-btn-primary" id="confirm-yes">Share</button>
+    </div>
+  </div>`;
+  overlay.addEventListener('click', dismiss);
+  document.body.appendChild(overlay);
+  document.getElementById('confirm-yes').onclick = () => { dismiss(); onConfirm(); };
+  document.getElementById('confirm-close').onclick = dismiss;
+  requestAnimationFrame(() => overlay.classList.add('open'));
 }
 
 function closeMeetupModal() {
@@ -1139,13 +1538,58 @@ function blockUserConfirm(userId, name) {
 }
 
 // --- Image viewer ---
+function toggleVideo(wrap) {
+  const vid = wrap.querySelector('video');
+  if (vid.paused) { vid.play(); wrap.classList.add('playing'); }
+  else { vid.pause(); wrap.classList.remove('playing'); }
+}
+
+let _expandedFromWrap = null;
+
+function expandVideo(wrap, url) {
+  const vid = wrap.querySelector('video');
+  const t = vid.currentTime;
+  vid.pause();
+  wrap.classList.remove('playing');
+  _expandedFromWrap = wrap;
+  openVideoViewer(url, t);
+}
+
+function closeViewer() {
+  const overlay = document.getElementById('image-viewer');
+  if (!overlay) return;
+  const viewerVid = overlay.querySelector('video');
+  if (viewerVid && _expandedFromWrap) {
+    const smallVid = _expandedFromWrap.querySelector('video');
+    if (smallVid) smallVid.currentTime = viewerVid.currentTime;
+  }
+  viewerVid?.pause();
+  _expandedFromWrap = null;
+  overlay.classList.remove('open');
+  setTimeout(() => overlay.remove(), 200);
+}
+
 function openImageViewer(url) {
   document.getElementById('image-viewer')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'image-viewer';
   overlay.className = 'image-viewer';
   overlay.innerHTML = `<img src="${url}">`;
-  overlay.addEventListener('click', () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); });
+  overlay.addEventListener('click', closeViewer);
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+}
+
+function openVideoViewer(url, startTime) {
+  document.getElementById('image-viewer')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'image-viewer';
+  overlay.className = 'image-viewer';
+  overlay.innerHTML = `<div style="position:relative;max-width:90%;max-height:90%" onclick="event.stopPropagation()">
+    <video src="${url}" autoplay playsinline style="width:100%;max-height:90vh;border-radius:4px;display:block" onclick="this.paused?this.play():this.pause()" onloadedmetadata="this.currentTime=${startTime || 0}"></video>
+    <svg class="viewer-close" viewBox="0 0 24 24" fill="#fff" onclick="event.stopPropagation();closeViewer()"><path fill-rule="evenodd" clip-rule="evenodd" d="M14 1.25C14.4142 1.25 14.75 1.58579 14.75 2C14.75 3.90682 14.7516 5.26149 14.8898 6.28915C15.025 7.29524 15.2787 7.87489 15.7019 8.2981C16.1251 8.72131 16.7048 8.97498 17.7108 9.11024C18.7385 9.24841 20.0932 9.25 22 9.25C22.4142 9.25 22.75 9.58579 22.75 10C22.75 10.4142 22.4142 10.75 22 10.75H21.9436C20.1058 10.75 18.6502 10.75 17.511 10.5969C16.3386 10.4392 15.3896 10.1071 14.6412 9.35876C13.8929 8.61039 13.5608 7.66145 13.4031 6.48902C13.25 5.34981 13.25 3.89417 13.25 2.05641V2C13.25 1.58579 13.5858 1.25 14 1.25ZM10 1.25C10.4142 1.25 10.75 1.58579 10.75 2V2.05641C10.75 3.89417 10.75 5.34981 10.5969 6.48902C10.4392 7.66145 10.1071 8.61039 9.35876 9.35876C8.61039 10.1071 7.66145 10.4392 6.48902 10.5969C5.34981 10.75 3.89417 10.75 2.05641 10.75H2C1.58579 10.75 1.25 10.4142 1.25 10C1.25 9.58579 1.58579 9.25 2 9.25C3.90682 9.25 5.26149 9.24841 6.28915 9.11024C7.29524 8.97498 7.87489 8.72131 8.2981 8.2981C8.72131 7.87489 8.97498 7.29524 9.11024 6.28915C9.24841 5.26149 9.25 3.90682 9.25 2C9.25 1.58579 9.58579 1.25 10 1.25ZM1.25 14C1.25 13.5858 1.58579 13.25 2 13.25H2.05641C3.89417 13.25 5.34981 13.25 6.48902 13.4031C7.66145 13.5608 8.61039 13.8929 9.35876 14.6412C10.1071 15.3896 10.4392 16.3386 10.5969 17.511C10.75 18.6502 10.75 20.1058 10.75 21.9436V22C10.75 22.4142 10.4142 22.75 10 22.75C9.58579 22.75 9.25 22.4142 9.25 22C9.25 20.0932 9.24841 18.7385 9.11024 17.7108C8.97498 16.7048 8.72131 16.1251 8.2981 15.7019C7.87489 15.2787 7.29524 15.025 6.28915 14.8898C5.26149 14.7516 3.90682 14.75 2 14.75C1.58579 14.75 1.25 14.4142 1.25 14ZM21.9436 13.25H22C22.4142 13.25 22.75 13.5858 22.75 14C22.75 14.4142 22.4142 14.75 22 14.75C20.0932 14.75 18.7385 14.7516 17.7108 14.8898C16.7048 15.025 16.1251 15.2787 15.7019 15.7019C15.2787 16.1251 15.025 16.7048 14.8898 17.7108C14.7516 18.7385 14.75 20.0932 14.75 22C14.75 22.4142 14.4142 22.75 14 22.75C13.5858 22.75 13.25 22.4142 13.25 22V21.9436C13.25 20.1058 13.25 18.6502 13.4031 17.511C13.5608 16.3386 13.8929 15.3896 14.6412 14.6412C15.3896 13.8929 16.3386 13.5608 17.511 13.4031C18.6502 13.25 20.1058 13.25 21.9436 13.25Z"/></svg>
+  </div>`;
+  overlay.addEventListener('click', closeViewer);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 }
@@ -1196,11 +1640,13 @@ async function route() {
     renderRoomList();
   } finally {
     _routing = false;
+    document.getElementById('app').style.visibility = '';
   }
 }
 
 window.addEventListener('hashchange', route);
 window.addEventListener('resize', () => { isMobile = window.innerWidth < 768; });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
 route();
 </script>
 </body>
