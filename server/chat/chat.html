@@ -215,8 +215,16 @@ const REACTION_EMOJIS = {'👍':'thumbs_up','❤️':'heart','😂':'laugh','�
 const REACTION_KEYS = Object.entries(REACTION_EMOJIS);
 
 // --- Debug ---
-const DEBUG = location.search.includes('debug') || true;
+const DEBUG = true;
 function dbg(...args) { if (DEBUG) console.log('[chat]', ...args); }
+function verify(label, condition, detail) {
+  if (condition) {
+    console.log(`[chat] ✓ ${label}`, detail || '');
+  } else {
+    console.error(`[chat] ✗ FAIL: ${label}`, detail || '');
+  }
+  return condition;
+}
 
 // --- Avatar ---
 function avatarColor(id) {
@@ -262,6 +270,7 @@ async function checkAuth() {
 }
 
 function renderAuth() {
+  dbg('renderAuth');
   document.getElementById('app').innerHTML = `
     <div class="header"><span class="title">Join Chat</span></div>
     <div class="auth-screen">
@@ -277,20 +286,24 @@ function renderAuth() {
       <input class="auth-input" id="email-input" type="email" placeholder="your@email.com">
       <button class="auth-btn" onclick="authEmail()">Send magic link</button>
     </div>`;
+  verify('renderAuth', document.querySelector('.auth-screen'), 'auth screen rendered');
+  verify('renderAuth', document.getElementById('email-input'), 'email input exists');
 }
 
 async function authGoogle() { showToast('Google Sign-In not configured yet'); }
 async function authApple() { showToast('Apple Sign-In not configured yet'); }
 async function authEmail() {
   const email = document.getElementById('email-input').value.trim();
-  if (!email) return;
+  if (!email) { dbg('authEmail: empty email'); return; }
   try {
     await api('/auth/email/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    verify('authEmail', true, 'magic link sent to ' + email);
     showToast('Check your email for the sign-in link');
-  } catch (e) { showToast(e.message); }
+  } catch (e) { verify('authEmail', false, e.message); showToast(e.message); }
 }
 
 function renderNamePrompt() {
+  dbg('renderNamePrompt');
   document.getElementById('app').innerHTML = `
     <div class="header"><span class="title">Choose a name</span></div>
     <div class="name-prompt">
@@ -299,6 +312,8 @@ function renderNamePrompt() {
       <button onclick="setName()">Continue</button>
     </div>`;
   document.getElementById('name-input').focus();
+  verify('renderNamePrompt', document.querySelector('.name-prompt'), 'name prompt rendered');
+  verify('renderNamePrompt', document.getElementById('name-input'), 'name input exists');
 }
 
 async function setName() {
@@ -342,6 +357,7 @@ function handleWSEvent(data) {
     case 'room_history':
       messagesByRoom[data.room_id] = data.messages;
       onlineByRoom[data.room_id] = data.online;
+      verify('room_history', data.messages, data.messages.length + ' messages for ' + data.room_id);
       if (currentRoom === data.room_id) renderMessages();
       break;
     case 'message':
@@ -358,6 +374,9 @@ function handleWSEvent(data) {
         msgs[idx].pending = false;
         const el = document.querySelector(`[data-msg-id="${data.temp_id}"]`);
         if (el) { el.setAttribute('data-msg-id', data.id); el.classList.remove('msg-pending'); }
+        verify('message_acked', el, 'pending→confirmed temp_id=' + data.temp_id + ' → id=' + data.id);
+      } else {
+        verify('message_acked', false, 'temp_id not found: ' + data.temp_id);
       }
       break;
     }
@@ -365,7 +384,9 @@ function handleWSEvent(data) {
       const msgs2 = messagesByRoom[data.room_id] || [];
       const idx2 = msgs2.findIndex(m => m.id === data.id);
       if (idx2 !== -1) msgs2.splice(idx2, 1);
-      document.querySelector(`[data-msg-id="${data.id}"]`)?.remove();
+      const removedEl = document.querySelector(`[data-msg-id="${data.id}"]`);
+      removedEl?.remove();
+      verify('message_removed', !document.querySelector(`[data-msg-id="${data.id}"]`), 'message removed from DOM id=' + data.id);
       showToast(data.reason || 'Message removed', 5000);
       break;
     }
@@ -409,6 +430,7 @@ function handleWSEvent(data) {
 // --- Room List ---
 async function loadRooms() {
   try { rooms = await api('/rooms'); } catch { rooms = []; }
+  verify('loadRooms', rooms.length > 0, rooms.length + ' rooms loaded');
 }
 
 function renderRoomList() {
@@ -448,6 +470,9 @@ function renderRoomList() {
         <div class="content"><div class="empty">Choose a room to start chatting</div></div>
       </div>`;
   }
+  const roomItems = document.querySelectorAll('.room-item');
+  verify('renderRoomList', roomItems.length > 0, roomItems.length + ' room items in DOM');
+  verify('renderRoomList', document.getElementById('room-list'), 'room-list element exists');
 }
 
 function switchTab(btn, tab) {
@@ -524,6 +549,9 @@ async function openRoom(roomId, roomName, roomType) {
     await connectWS();
     if (ws && ws.readyState === 1) wsSend('join_room', { room_id: roomId });
   }
+  verify('openRoom', currentRoom === roomId, 'currentRoom set to ' + roomId);
+  verify('openRoom', document.getElementById('msg-input'), 'message input exists');
+  verify('openRoom', document.getElementById('messages'), 'messages container exists');
 }
 
 function renderChatView(roomName) {
@@ -581,6 +609,11 @@ function renderChatView(roomName) {
   renderMessages();
   scrollToBottom();
 
+  verify('renderChatView', document.getElementById('msg-input'), 'input rendered');
+  verify('renderChatView', document.getElementById('messages'), 'messages container rendered');
+  verify('renderChatView', document.querySelector('.input-bar'), 'input bar rendered');
+  verify('renderChatView', document.querySelector('.action-toggle'), '+ button rendered');
+
   const input = document.getElementById('msg-input');
   if (input) {
     let typing = false;
@@ -597,8 +630,11 @@ function renderChatView(roomName) {
 
 function renderMessages() {
   const el = document.getElementById('messages');
-  if (!el) return;
-  el.innerHTML = (messagesByRoom[currentRoom] || []).map(m => renderMessage(m)).join('');
+  if (!el) { verify('renderMessages', false, '#messages not found'); return; }
+  const msgs = messagesByRoom[currentRoom] || [];
+  el.innerHTML = msgs.map(m => renderMessage(m)).join('');
+  const rendered = el.querySelectorAll('.msg').length;
+  verify('renderMessages', rendered === msgs.length, rendered + '/' + msgs.length + ' messages rendered');
 }
 
 function appendMessage(m) {
@@ -734,11 +770,14 @@ function setReply(msgId, name, text) {
     preview.classList.add('visible');
   }
   document.getElementById('msg-input')?.focus();
+  verify('setReply', replyTo?.id === msgId, 'reply set to msg ' + msgId + ' by ' + name);
+  verify('setReply', preview?.classList.contains('visible'), 'reply preview visible');
 }
 
 function cancelReply() {
   replyTo = null;
   document.getElementById('reply-preview')?.classList.remove('visible');
+  verify('cancelReply', !replyTo, 'reply cleared');
 }
 
 // --- Reactions ---
@@ -796,21 +835,28 @@ function sendMessage() {
   appendMessage(optimisticMsg);
   scrollToBottom();
 
+  const pendingEl = document.querySelector(`[data-msg-id="${tempId}"]`);
+  verify('sendMessage', pendingEl, 'optimistic message in DOM with id=' + tempId);
+  verify('sendMessage', pendingEl?.classList.contains('msg-pending'), 'message has pending state');
+
   const payload = { room_id: currentRoom, type: 'text', content: JSON.stringify({ text }), temp_id: tempId };
   if (replyTo) payload.reply_to_id = replyTo.id;
   wsSend('send_message', payload);
+  dbg('sendMessage: sent to server, temp_id=' + tempId, 'text=' + text.slice(0, 30));
   input.value = '';
   cancelReply();
   wsSend('typing', { room_id: currentRoom, active: false });
 }
 
 function leaveRoom() {
+  dbg('leaveRoom:', currentRoom);
   if (currentRoom) wsSend('leave_room', { room_id: currentRoom });
   currentRoom = null;
   currentRoomName = null;
   currentRoomType = null;
   location.hash = 'chat';
   renderRoomList();
+  verify('leaveRoom', !currentRoom, 'currentRoom cleared');
 }
 
 function goBack() {
@@ -819,7 +865,13 @@ function goBack() {
 }
 
 // --- Action menu ---
-function toggleActionMenu() { document.getElementById('action-menu')?.classList.toggle('open'); }
+function toggleActionMenu() {
+  const menu = document.getElementById('action-menu');
+  menu?.classList.toggle('open');
+  const isOpen = menu?.classList.contains('open');
+  verify('toggleActionMenu', menu, 'action menu element exists');
+  verify('toggleActionMenu', true, isOpen ? 'opened' : 'closed');
+}
 function closeActionMenu() { document.getElementById('action-menu')?.classList.remove('open'); }
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.action-menu') && !e.target.closest('.action-toggle')) closeActionMenu();
@@ -857,8 +909,9 @@ function uploadImage() {
     const form = new FormData(); form.append('file', file);
     try {
       const result = await fetch(API + '/upload/image', { method: 'POST', body: form, credentials: 'include' }).then(r => r.json());
+      verify('uploadImage', result.url, 'image uploaded: ' + result.url);
       wsSend('send_message', { room_id: currentRoom, type: 'image', content: JSON.stringify(result) });
-    } catch { showToast('Upload failed'); }
+    } catch (e) { verify('uploadImage', false, e.message); showToast('Upload failed'); }
   };
   input.click();
 }
@@ -898,7 +951,13 @@ function openMeetupModal() {
   </div>`;
   modal.addEventListener('click', closeMeetupModal);
   document.body.appendChild(modal);
-  requestAnimationFrame(() => modal.classList.add('open'));
+  requestAnimationFrame(() => {
+    modal.classList.add('open');
+    verify('openMeetupModal', document.getElementById('meetup-modal'), 'modal in DOM');
+    verify('openMeetupModal', document.getElementById('meetup-title'), 'title input exists');
+    verify('openMeetupModal', document.getElementById('meetup-time'), 'time input exists');
+    verify('openMeetupModal', document.getElementById('meetup-location'), 'location input exists');
+  });
   document.getElementById('meetup-title').focus();
 }
 
@@ -923,13 +982,15 @@ function submitMeetup() {
   if (locationLabel) payload.label = locationLabel;
   if (note) payload.note = note;
   wsSend('create_meetup', payload);
+  dbg('submitMeetup: sent', payload.title, payload.meetup_time);
+  verify('submitMeetup', true, 'meetup "' + payload.title + '" submitted');
   closeMeetupModal();
   showToast('Meetup created!');
 }
 
 function closeMeetupModal() {
   const modal = document.getElementById('meetup-modal');
-  if (modal) { modal.classList.remove('open'); setTimeout(() => modal.remove(), 200); }
+  if (modal) { modal.classList.remove('open'); setTimeout(() => { modal.remove(); verify('closeMeetupModal', !document.getElementById('meetup-modal'), 'modal removed from DOM'); }, 200); }
   _meetupCoords = null;
 }
 
@@ -948,7 +1009,12 @@ function showUserMenu(userId, name) {
   </div>`;
   sheet.addEventListener('click', closeActionSheet);
   document.body.appendChild(sheet);
-  requestAnimationFrame(() => sheet.classList.add('open'));
+  requestAnimationFrame(() => {
+    sheet.classList.add('open');
+    verify('showUserMenu', document.getElementById('action-sheet'), 'action sheet in DOM');
+    verify('showUserMenu', document.querySelector('.action-sheet-title'), 'shows name: ' + name);
+    verify('showUserMenu', document.querySelectorAll('.action-sheet-btn').length === 3, '3 buttons (DM, Block, Cancel)');
+  });
 }
 
 function closeActionSheet() {
