@@ -1005,7 +1005,10 @@ function handleWSEvent(data) {
     case 'message_rejected': showToast(data.reason); break;
     case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`); break;
     case 'banned': showToast('You have been banned: ' + data.reason); currentUser = null; renderAuth(); break;
-    case 'dm_opened': navigateTo('room/' + data.room_id); break;
+    case 'dm_opened':
+      dbg('[DM] dm_opened, navigating to', data.room_id, data.name);
+      openRoom(data.room_id, data.name || '', 'dm');
+      break;
     case 'report_confirmed': showToast('Report submitted'); break;
     case 'reaction_updated': {
       const msgs3 = messagesByRoom[currentRoom] || [];
@@ -1196,7 +1199,7 @@ async function loadMeetups() {
       const countParts = [fmtTime(m.meetup_time), m.attendee_count + ' going'];
       if (online > 0) countParts.push(online + ' online');
       const isGoing = m.is_going;
-      return `<li class="room-item" data-room-id="${m.id}" data-room-type="meetup" data-meetup-info="${esc(fmtTime(m.meetup_time))} · ${m.attendee_count} going" onclick="openRoom('${m.id}','${esc(m.title)}','meetup')">
+      return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" data-room-type="meetup" data-meetup-info="${esc(fmtTime(m.meetup_time))} · ${m.attendee_count} going" onclick="openRoom('${m.id}','${esc(m.title)}','meetup')">
         <div class="room-dot ${online > 0 ? 'online' : 'offline'}"></div>
         <div class="room-info">
           <div class="room-name">${esc(m.title)}</div>
@@ -1243,7 +1246,7 @@ async function loadDMs() {
     el.innerHTML = dms.map(dm => {
       const unread = unreadByRoom[dm.room_id] || 0;
       const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
-      return `<li class="room-item" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
+      return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
         ${avatarHtml(dm.other_name, 0)}
         <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
         <div class="room-meta">${badgeHtml}</div>
@@ -1265,6 +1268,19 @@ async function openRoom(roomId, roomName, roomType) {
     dbg('openRoom: creating desktop layout first');
     renderRoomList();
   }
+  const tabMap = { dm: 'dms', meetup: 'meetups' };
+  const targetTab = tabMap[currentRoomType] || 'stages';
+  const sidebar = document.querySelector('.sidebar') || document.querySelector('.tabs')?.parentElement;
+  if (sidebar) {
+    const tabs = sidebar.querySelectorAll('.tabs button');
+    const tabNames = ['stages', 'meetups', 'dms'];
+    tabs.forEach((btn, i) => {
+      btn.classList.toggle('active', tabNames[i] === targetTab);
+    });
+  }
+  if (targetTab === 'dms') loadDMs();
+  else if (targetTab === 'meetups') loadMeetups();
+  else renderRoomItems();
   renderChatView(roomName);
   if (currentRoomType === 'dm') history.replaceState(null, '', '/chat/d/' + roomId);
   else if (currentRoomType === 'meetup') history.replaceState(null, '', '/chat/m/' + roomId);
@@ -1359,7 +1375,9 @@ function renderChatView(roomName) {
         </div>
         ${inputBar}`;
     }
-    document.querySelectorAll('.room-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.room-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.roomId === currentRoom);
+    });
   }
 
   renderMessages();

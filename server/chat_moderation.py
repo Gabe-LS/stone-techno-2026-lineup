@@ -182,7 +182,9 @@ CONTENT_DETECTION_PROMPT = (
     "4. EXTERNAL LINKS: Telegram handles/links, WhatsApp numbers, Discord invites, "
     "or any attempt to move the conversation to another platform for transactions.\n"
     "Do NOT flag: normal conversation about the festival, music, artists, meetups, "
-    "sharing locations, asking for directions, discussing set times, or casual language.\n"
+    "sharing locations, asking for directions, discussing set times, or casual language. "
+    "YouTube, SoundCloud, Mixcloud, Bandcamp, Spotify, Apple Music, Instagram, and Resident Advisor "
+    "links are allowed — people share music and DJ sets.\n"
     'Respond: {"flagged": true, "category": "drugs|spam|payment|external", "reason": "..."} '
     'or {"flagged": false}'
 )

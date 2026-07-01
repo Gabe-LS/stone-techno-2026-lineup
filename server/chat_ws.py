@@ -843,8 +843,17 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     continue
                 try:
                     room_id = find_or_create_dm(db, event_id, user_id, target_user_id)
+                    from chat_db import get_user
+
+                    target = get_user(db, target_user_id)
+                    target_name = target["display_name"] if target else ""
                     await manager.send_to_user(
-                        user_id, {"event": "dm_opened", "room_id": room_id}
+                        user_id,
+                        {
+                            "event": "dm_opened",
+                            "room_id": room_id,
+                            "name": target_name,
+                        },
                     )
                 except ValueError:
                     pass

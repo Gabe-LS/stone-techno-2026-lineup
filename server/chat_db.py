@@ -398,9 +398,12 @@ def leave_room_membership(db: sqlite3.Connection, user_id: str, room_id: str) ->
 
 
 def mark_room_read(db: sqlite3.Connection, user_id: str, room_id: str) -> None:
+    now = _now()
     db.execute(
-        "UPDATE room_memberships SET last_read_at = ? WHERE user_id = ? AND room_id = ?",
-        (_now(), user_id, room_id),
+        "INSERT INTO room_memberships (user_id, room_id, joined_at, last_read_at) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(user_id, room_id) DO UPDATE SET last_read_at = excluded.last_read_at",
+        (user_id, room_id, now, now),
     )
     db.commit()
 
