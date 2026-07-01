@@ -189,7 +189,7 @@ async def auth_apple(request: Request, response: Response):
     return _authenticate(db, "apple", provider_id, name, fingerprint, response)
 
 
-@router.post("/auth/email/start")
+@router.post("/login")
 async def auth_email_start(request: Request):
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
@@ -231,7 +231,7 @@ async def auth_email_start(request: Request):
             base_url = os.environ.get(
                 "CHAT_BASE_URL", "https://stonetechno.deftlab.dev"
             )
-            verify_url = f"{base_url}/chat/api/v?t={token}"
+            verify_url = f"{base_url}/chat/api/verify?token={token}"
             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
             client.send_basic_email(
                 {
@@ -251,12 +251,7 @@ async def auth_email_start(request: Request):
     return {"sent": True}
 
 
-@router.get("/v")
-async def verify_short(request: Request, t: str = ""):
-    return await auth_email_verify(request, t)
-
-
-@router.get("/auth/email/verify")
+@router.get("/verify")
 async def auth_email_verify(request: Request, token: str = ""):
     db = _get_db()
     row = db.execute(
@@ -281,13 +276,13 @@ async def auth_email_verify(request: Request, token: str = ""):
     return redirect
 
 
-@router.post("/auth/logout")
+@router.post("/logout")
 async def auth_logout(response: Response):
     response.delete_cookie("chat_session")
     return {"ok": True}
 
 
-@router.delete("/auth/account")
+@router.delete("/account")
 async def auth_delete_account(request: Request, response: Response):
     user, db = _get_user_from_cookie(request)
     delete_user(db, user["id"])
@@ -346,20 +341,20 @@ def _validate_display_name(name: str) -> str | None:
     return None
 
 
-@router.get("/auth/check-username")
+@router.get("/check-username")
 async def check_username(request: Request, name: str = ""):
     user, db = _get_user_from_cookie(request)
     err = _validate_username(name, db, user["id"])
     return {"available": err is None, "reason": err or ""}
 
 
-@router.get("/auth/check-displayname")
+@router.get("/check-name")
 async def check_displayname(request: Request, name: str = ""):
     err = _validate_display_name(name)
     return {"available": err is None, "reason": err or ""}
 
 
-@router.put("/auth/profile")
+@router.put("/profile")
 async def auth_update_profile(request: Request):
     user, db = _get_user_from_cookie(request)
     body = await request.json()
@@ -409,7 +404,7 @@ async def auth_update_profile(request: Request):
     return {"ok": True}
 
 
-@router.get("/auth/me")
+@router.get("/me")
 async def auth_me(request: Request):
     user, db = _get_user_from_cookie(request)
     keys = user.keys()

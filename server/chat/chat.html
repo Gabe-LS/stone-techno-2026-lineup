@@ -415,7 +415,7 @@ async function api(path, opts) {
 
 // --- Auth ---
 async function checkAuth() {
-  try { currentUser = await api('/auth/me'); return true; }
+  try { currentUser = await api('/me'); return true; }
   catch { currentUser = null; return false; }
 }
 
@@ -449,7 +449,7 @@ async function authEmail() {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
   if (!emailRegex.test(email)) { showToast('Please enter a valid email address'); input.focus(); return; }
   try {
-    await api('/auth/email/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    await api('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
     showToast('Check your email for the sign-in link');
   } catch (e) { showToast(e.message); }
 }
@@ -545,7 +545,7 @@ function onUsernameInput() {
   status.className = 'field-status';
   _usernameTimer = setTimeout(async () => {
     try {
-      const r = await api('/auth/check-username?name=' + encodeURIComponent(val));
+      const r = await api('/check-username?name=' + encodeURIComponent(val));
       if (document.getElementById('username-input').value !== val) return;
       _usernameOk = r.available;
       const inp = document.getElementById('username-input');
@@ -579,7 +579,7 @@ function onDisplayNameInput() {
   status.className = 'field-status';
   _displaynameTimer = setTimeout(async () => {
     try {
-      const r = await api('/auth/check-displayname?name=' + encodeURIComponent(val));
+      const r = await api('/check-name?name=' + encodeURIComponent(val));
       if (document.getElementById('displayname-input').value.trim() !== val) return;
       const inp = document.getElementById('displayname-input');
       inp.classList.toggle('valid', r.available);
@@ -861,7 +861,7 @@ async function submitProfile() {
     }
     const body = { username, country, avatar_url: _profileAvatarUrl };
     if (displayName) body.display_name = displayName;
-    await api('/auth/profile', {
+    await api('/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1128,7 +1128,7 @@ async function openRoom(roomId, roomName, roomType) {
     renderRoomList();
   }
   renderChatView(roomName);
-  if (rooms.length > 1) location.hash = 'chat/room/' + roomId;
+  if (rooms.length > 1) location.hash = 'r/' + roomId;
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
   if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });
@@ -1577,7 +1577,7 @@ function leaveRoom() {
   currentRoom = null;
   currentRoomName = null;
   currentRoomType = null;
-  location.hash = 'chat';
+  location.hash = '';
   renderRoomList();
   verify('leaveRoom', !currentRoom, 'currentRoom cleared');
 }
@@ -2234,7 +2234,7 @@ function onEditDisplayNameInput() {
   status.className = 'field-status';
   _editDisplaynameTimer = setTimeout(async () => {
     try {
-      const r = await api('/auth/check-displayname?name=' + encodeURIComponent(val));
+      const r = await api('/check-name?name=' + encodeURIComponent(val));
       if (document.getElementById('edit-displayname')?.value.trim() !== val) return;
       const inp = document.getElementById('edit-displayname');
       inp.classList.toggle('valid', r.available);
@@ -2494,7 +2494,7 @@ async function saveProfile() {
       body.avatar_url = result.url;
     }
     if (Object.keys(body).length === 0) { closeProfileModal(); return; }
-    await api('/auth/profile', {
+    await api('/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -2579,7 +2579,7 @@ function confirmLogout() {
 async function doLogout() {
   dbg('[AUTH] doLogout');
   try {
-    await api('/auth/logout', { method: 'POST' });
+    await api('/logout', { method: 'POST' });
   } catch {}
   if (ws) { try { ws.close(); } catch {} ws = null; }
   currentUser = null;
@@ -2660,10 +2660,10 @@ async function route() {
   if (_routing) { dbg('route: skip (already routing)'); return; }
   _routing = true;
   try {
-  const hash = location.hash.slice(1) || 'chat';
-  dbg('route:', hash);
+  const hash = location.hash.slice(1);
+  dbg('route:', hash || '(none)');
 
-  if (hash.startsWith('chat/room/') && currentRoom === hash.replace('chat/room/', '') && currentRoomName) return;
+  if (hash.startsWith('r/') && currentRoom === hash.slice(2) && currentRoomName) return;
 
   const authed = await checkAuth();
   if (!authed) { renderAuth(); return; }
@@ -2671,8 +2671,8 @@ async function route() {
   if (!ws || ws.readyState !== 1) await connectWS();
   await loadRooms();
 
-  if (hash.startsWith('chat/room/')) {
-    const roomId = hash.replace('chat/room/', '');
+  if (hash.startsWith('r/')) {
+    const roomId = hash.slice(2);
     const room = rooms.find(r => r.id === roomId);
     let roomName = room ? room.name : currentRoomName || null;
     let roomType = room ? room.type : currentRoomType || 'stage';

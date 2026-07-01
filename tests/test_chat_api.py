@@ -111,22 +111,22 @@ def general_room():
 
 class TestAuth:
     def test_me_unauthenticated(self, client):
-        r = client.get("/chat/api/auth/me")
+        r = client.get("/chat/api/me")
         assert r.status_code == 401
 
     def test_me_authenticated(self, auth_client, user1):
-        r = auth_client.get("/chat/api/auth/me")
+        r = auth_client.get("/chat/api/me")
         assert r.status_code == 200
         assert r.json()["display_name"] == "Alice"
         assert r.json()["id"] == user1["id"]
 
     def test_logout(self, auth_client):
-        r = auth_client.post("/chat/api/auth/logout")
+        r = auth_client.post("/chat/api/logout")
         assert r.status_code == 200
 
     def test_update_profile(self, auth_client):
         r = auth_client.put(
-            "/chat/api/auth/profile",
+            "/chat/api/profile",
             json={"display_name": "NewAlice"},
         )
         assert r.status_code == 200
@@ -134,20 +134,20 @@ class TestAuth:
 
     def test_update_profile_too_short(self, auth_client):
         r = auth_client.put(
-            "/chat/api/auth/profile",
+            "/chat/api/profile",
             json={"display_name": "a"},
         )
         assert r.status_code == 400
 
     def test_delete_account(self, auth_client, user1):
-        r = auth_client.delete("/chat/api/auth/account")
+        r = auth_client.delete("/chat/api/account")
         assert r.status_code == 200
         assert get_user(_test_db, user1["id"]) is None
 
     def test_email_start_disposable_blocked(self, client, monkeypatch):
         monkeypatch.setattr("chat_api.DISPOSABLE_DOMAINS", {"tempmail.com"})
         r = client.post(
-            "/chat/api/auth/email/start",
+            "/chat/api/login",
             json={"email": "test@tempmail.com"},
         )
         assert r.status_code == 400
@@ -156,7 +156,7 @@ class TestAuth:
     def test_email_start_valid(self, client, monkeypatch):
         monkeypatch.setattr("chat_api.DISPOSABLE_DOMAINS", set())
         r = client.post(
-            "/chat/api/auth/email/start",
+            "/chat/api/login",
             json={"email": "test@gmail.com"},
         )
         assert r.status_code == 200
@@ -167,7 +167,7 @@ class TestAuth:
         ban_user(_test_db, user["id"], "email", "hash-123", "bad", "fp-bad")
         session = create_session(_test_db, user["id"])
         client.cookies.set("chat_session", session["token"])
-        r = client.get("/chat/api/auth/me")
+        r = client.get("/chat/api/me")
         assert r.status_code == 200
 
 
