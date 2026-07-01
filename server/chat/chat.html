@@ -2161,8 +2161,36 @@ function openProfileModal() {
   if (editCountryStatus && u.country) editCountryStatus.className = 'field-status ok';
 }
 
+let _editDisplaynameTimer = null;
+
 function onEditDisplayNameInput() {
   updateEditPreview();
+  clearTimeout(_editDisplaynameTimer);
+  const val = document.getElementById('edit-displayname').value.trim();
+  const status = document.getElementById('edit-displayname-status');
+  const hint = document.getElementById('edit-displayname-hint');
+  if (!val) {
+    status.textContent = '';
+    hint.textContent = 'Shown in chat instead of username';
+    hint.className = 'field-hint';
+    document.getElementById('edit-displayname').classList.remove('valid');
+    return;
+  }
+  if (val.length < 2) { status.textContent = ''; hint.textContent = '2-30 characters'; hint.className = 'field-hint err'; document.getElementById('edit-displayname').classList.remove('valid'); return; }
+  status.textContent = '...';
+  status.className = 'field-status';
+  _editDisplaynameTimer = setTimeout(async () => {
+    try {
+      const r = await api('/auth/check-displayname?name=' + encodeURIComponent(val));
+      if (document.getElementById('edit-displayname')?.value.trim() !== val) return;
+      const inp = document.getElementById('edit-displayname');
+      inp.classList.toggle('valid', r.available);
+      status.textContent = r.available ? 'ok' : '';
+      status.className = 'field-status ' + (r.available ? 'ok' : 'err');
+      hint.textContent = r.available ? 'Looks good' : r.reason;
+      hint.className = 'field-hint' + (r.available ? '' : ' err');
+    } catch { status.textContent = ''; }
+  }, 400);
 }
 
 function updateEditPreview() {
