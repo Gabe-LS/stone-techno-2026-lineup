@@ -459,6 +459,23 @@ async def room_messages(room_id: str, request: Request):
     ]
 
 
+@router.get("/messages/{message_id}")
+async def get_message_context(message_id: str, request: Request):
+    user, db = _get_user_from_cookie(request)
+    msg = db.execute(
+        "SELECT room_id FROM messages WHERE id = ?", (message_id,)
+    ).fetchone()
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    room = get_room(db, msg["room_id"])
+    return {
+        "message_id": message_id,
+        "room_id": msg["room_id"],
+        "room_name": room["name"] if room else "Chat",
+        "room_type": room["type"] if room else "general",
+    }
+
+
 @router.get("/rooms/{room_id}/info")
 async def room_info(room_id: str, request: Request):
     user, db = _get_user_from_cookie(request)
@@ -948,7 +965,10 @@ def mount_chat(app):
     @app.get("/chat/r/{room_id}", response_class=HTMLResponse)
     @app.get("/chat/d/{username}", response_class=HTMLResponse)
     @app.get("/chat/m/{meetup_id}", response_class=HTMLResponse)
-    async def serve_chat(room_id: str = "", username: str = "", meetup_id: str = ""):
+    @app.get("/chat/msg/{message_id}", response_class=HTMLResponse)
+    async def serve_chat(
+        room_id: str = "", username: str = "", meetup_id: str = "", message_id: str = ""
+    ):
         chat_html = CHAT_DIR / "chat.html"
         if chat_html.exists():
             return HTMLResponse(chat_html.read_text(encoding="utf-8"))
