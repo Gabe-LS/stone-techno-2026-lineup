@@ -1058,7 +1058,7 @@ function updateHeaderCount() {
   if (!currentRoom) return;
   const count = (onlineByRoom[currentRoom] || []).length;
   const el = document.querySelector('.header .online');
-  if (el) el.innerHTML = count + ' ' + USER_ICON + ' online';
+  if (el) el.textContent = count + ' online';
 }
 
 async function loadMeetups() {
@@ -1163,7 +1163,7 @@ function renderChatView(roomName) {
         <button class="back" onclick="leaveRoom()">←</button>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
-          <span class="online">${onlineCount} ${USER_ICON} online</span>
+          <span class="online">${onlineCount} online</span>
         </div>
         ${headerAvatar}
       </div>
@@ -1179,7 +1179,7 @@ function renderChatView(roomName) {
         <div class="header">
           <div class="header-info">
             <span class="title">${esc(roomName)}</span>
-            <span class="online">${onlineCount} ${USER_ICON} online</span>
+            <span class="online">${onlineCount} online</span>
           </div>
           ${headerAvatar}
         </div>
@@ -2124,11 +2124,16 @@ function openProfileModal() {
       <span class="modal-title">Edit Profile</span>
       <button class="modal-close" onclick="closeProfileModal()">&times;</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="align-items:center">
+      <div class="avatar-upload" id="edit-avatar" onclick="editProfileAvatar()" style="width:80px;height:80px">
+        ${u.avatar_url ? '<img src="' + u.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none" style="width:24px;height:24px;color:var(--color-disabled)"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
+      </div>
       <label class="modal-label">Display name</label>
-      <input class="modal-input" id="edit-displayname" value="${escapeHtml(u.display_name || '')}" maxlength="30" placeholder="Display name (optional)" autocomplete="off">
+      <input class="modal-input" id="edit-displayname" value="${escapeHtml(u.display_name || '')}" maxlength="30" placeholder="Display name (optional)" autocomplete="off" style="text-align:center">
       <label class="modal-label">Country</label>
-      <input class="modal-input" id="edit-country" value="${escapeHtml(countryDisplay)}" readonly placeholder="Country" onclick="showToast('Use the registration page to change country')">
+      <select class="modal-input" id="edit-country" style="text-align:center;appearance:auto">
+        ${COUNTRIES.map(([code, name]) => '<option value="' + code + '"' + (code === u.country ? ' selected' : '') + '>' + FLAG(code) + ' ' + escapeHtml(name) + '</option>').join('')}
+      </select>
       <div style="font-size:var(--font-xs);color:var(--color-muted);margin-top:var(--space-xs)">Changes allowed once every 24 hours</div>
     </div>
     <div class="modal-footer">
@@ -2145,11 +2150,46 @@ function closeProfileModal() {
   if (el) { el.classList.remove('open'); setTimeout(() => el.remove(), 200); }
 }
 
+let _editAvatarUrl = '';
+
+function editProfileAvatar() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const bmp = await createImageBitmap(file);
+    if (bmp.width < 128 || bmp.height < 128) { bmp.close(); showToast('Image must be at least 128x128'); return; }
+    const cropSize = Math.min(bmp.width, bmp.height);
+    const cropX = (bmp.width - cropSize) / 2;
+    const cropY = (bmp.height - cropSize) / 2;
+    bmp.close();
+    const cropped = await createImageBitmap(file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
+    const canvas = new OffscreenCanvas(128, 128);
+    canvas.getContext('bitmaprenderer').transferFromImageBitmap(cropped);
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+    const form = new FormData();
+    form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
+    try {
+      const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
+      if (!resp.ok) throw new Error('Upload failed');
+      const result = await resp.json();
+      _editAvatarUrl = result.url;
+      const el = document.getElementById('edit-avatar');
+      if (el) el.innerHTML = '<img src="' + result.url + '">';
+    } catch (e) { showToast(e.message || 'Upload failed'); }
+  };
+  input.click();
+}
+
 async function saveProfile() {
   const displayName = document.getElementById('edit-displayname').value.trim();
+  const country = document.getElementById('edit-country').value;
   try {
     const body = {};
     if (displayName !== (currentUser?.display_name || '')) body.display_name = displayName || '';
+    if (country !== (currentUser?.country || '')) body.country = country;
+    if (_editAvatarUrl) body.avatar_url = _editAvatarUrl;
     if (Object.keys(body).length === 0) { closeProfileModal(); return; }
     await api('/auth/profile', {
       method: 'PUT',
@@ -2157,6 +2197,9 @@ async function saveProfile() {
       body: JSON.stringify(body),
     });
     if (body.display_name !== undefined) currentUser.display_name = displayName;
+    if (body.country) currentUser.country = country;
+    if (body.avatar_url) currentUser.avatar_url = _editAvatarUrl;
+    _editAvatarUrl = '';
     closeProfileModal();
     showToast('Profile updated');
   } catch (e) { showToast(e.message); }
