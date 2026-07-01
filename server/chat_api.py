@@ -685,7 +685,7 @@ async def get_avatar(user_id: str):
     return RawResponse(
         content=row["data"],
         media_type="image/avif",
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": "public, max-age=300"},
     )
 
 
