@@ -80,9 +80,9 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .header .title { flex: 1; font-weight: 600; font-size: var(--font-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .subtitle { font-size: var(--font-xs); color: var(--gray-400); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header .online { font-size: var(--font-xxs); color: var(--gray-400); }
-.header .header-info { flex: 1; min-width: 0; }
-.header .header-info .title { font-size: var(--font-sm); }
-.header .header-info .online { display: block; margin-top: 1px; }
+.header .header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.header .header-info .title { font-size: var(--font-sm); line-height: 1.2; }
+.header .header-info .online { display: block; line-height: 1.2; }
 .header .header-avatar { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.2); }
 .header .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .icon-user { vertical-align: -3px; }
@@ -2116,6 +2116,7 @@ function openProfileModal() {
   const u = currentUser || {};
   const countryName = COUNTRIES.find(c => c[0] === u.country)?.[1] || '';
   const countryDisplay = u.country ? FLAG(u.country) + ' ' + countryName : '';
+  _editCountry = u.country || '';
   const overlay = document.createElement('div');
   overlay.id = 'profile-modal';
   overlay.className = 'modal-overlay';
@@ -2131,9 +2132,10 @@ function openProfileModal() {
       <label class="modal-label">Display name</label>
       <input class="modal-input" id="edit-displayname" value="${escapeHtml(u.display_name || '')}" maxlength="30" placeholder="Display name (optional)" autocomplete="off" style="text-align:center">
       <label class="modal-label">Country</label>
-      <select class="modal-input" id="edit-country" style="text-align:center;appearance:auto">
-        ${COUNTRIES.map(([code, name]) => '<option value="' + code + '"' + (code === u.country ? ' selected' : '') + '>' + FLAG(code) + ' ' + escapeHtml(name) + '</option>').join('')}
-      </select>
+      <div class="country-picker" id="edit-country-picker" style="width:100%">
+        <input id="edit-country-input" placeholder="Country" value="${escapeHtml(countryDisplay)}" onfocus="openEditCountryPicker()" autocomplete="off" class="modal-input" style="text-align:center">
+        <div class="country-list" id="edit-country-list"></div>
+      </div>
       <div style="font-size:var(--font-xs);color:var(--color-muted);margin-top:var(--space-xs)">Changes allowed once every 24 hours</div>
     </div>
     <div class="modal-footer">
@@ -2151,6 +2153,65 @@ function closeProfileModal() {
 }
 
 let _editAvatarUrl = '';
+let _editCountry = '';
+
+function openEditCountryPicker() {
+  const picker = document.getElementById('edit-country-picker');
+  if (picker.classList.contains('open')) return;
+  picker.classList.add('open');
+  const input = document.getElementById('edit-country-input');
+  input.value = '';
+  input.placeholder = 'Search country...';
+  let hlIdx = 0;
+  renderEditCountryList('', 0);
+  input.oninput = () => { hlIdx = 0; renderEditCountryList(input.value, hlIdx); };
+  input.onkeydown = (e) => {
+    if (e.key === 'Escape') { closeEditCountryPicker(); return; }
+    const items = document.querySelectorAll('#edit-country-list .country-item[data-code]');
+    if (e.key === 'ArrowDown') { e.preventDefault(); hlIdx = Math.min(hlIdx + 1, items.length - 1); highlightCountryItem(items, hlIdx); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); hlIdx = Math.max(hlIdx - 1, 0); highlightCountryItem(items, hlIdx); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items[hlIdx]) items[hlIdx].click(); }
+  };
+  setTimeout(() => document.addEventListener('click', _editCountryOutsideClick), 10);
+}
+
+function _editCountryOutsideClick(e) {
+  if (!e.target.closest('#edit-country-picker')) closeEditCountryPicker();
+}
+
+function closeEditCountryPicker() {
+  const picker = document.getElementById('edit-country-picker');
+  if (!picker) return;
+  picker.classList.remove('open');
+  const input = document.getElementById('edit-country-input');
+  input.placeholder = 'Country';
+  input.oninput = null;
+  input.onkeydown = null;
+  if (_editCountry) {
+    const name = COUNTRIES.find(c => c[0] === _editCountry)?.[1] || '';
+    input.value = FLAG(_editCountry) + ' ' + name;
+  } else {
+    input.value = '';
+  }
+  document.removeEventListener('click', _editCountryOutsideClick);
+}
+
+function renderEditCountryList(query, hlIdx) {
+  const list = document.getElementById('edit-country-list');
+  if (!list) return;
+  const q = query.toLowerCase();
+  const matchStart = (haystack, needle) => haystack.toLowerCase().startsWith(needle) || haystack.split(/[\s-]+/).some(w => w.toLowerCase().startsWith(needle));
+  const filtered = COUNTRIES.filter(([code, name, alt]) => matchStart(name, q) || code.toLowerCase().startsWith(q) || (alt && alt.split(/\s+/).some(w => w.toLowerCase().startsWith(q))));
+  list.innerHTML = filtered.map(([code, name], i) =>
+    `<div class="country-item${i === (hlIdx || 0) ? ' highlighted' : ''}" data-code="${code}" onclick="selectEditCountry('${code}')">`
+    + `<span class="flag">${FLAG(code)}</span>${escapeHtml(name)}</div>`
+  ).join('') || '<div class="country-item" style="color:var(--color-muted)">No results</div>';
+}
+
+function selectEditCountry(code) {
+  _editCountry = code;
+  closeEditCountryPicker();
+}
 
 function editProfileAvatar() {
   const input = document.createElement('input');
@@ -2184,7 +2245,7 @@ function editProfileAvatar() {
 
 async function saveProfile() {
   const displayName = document.getElementById('edit-displayname').value.trim();
-  const country = document.getElementById('edit-country').value;
+  const country = _editCountry;
   try {
     const body = {};
     if (displayName !== (currentUser?.display_name || '')) body.display_name = displayName || '';
