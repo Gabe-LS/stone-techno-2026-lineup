@@ -215,12 +215,13 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .avatar-upload { width: 128px; height: 128px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
 .avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-upload svg { width: 32px; height: 32px; color: var(--color-muted); }
-.avatar-edit { width: 128px; height: 128px; border-radius: 50%; overflow: hidden; position: relative; cursor: grab; touch-action: none; }
-.avatar-edit:active { cursor: grabbing; }
+.avatar-edit { width: 128px; height: 128px; border-radius: 50%; overflow: hidden; position: relative; touch-action: none; }
 .avatar-edit img { position: absolute; user-select: none; -webkit-user-drag: none; }
-.avatar-zoom { width: 128px; display: flex; align-items: center; gap: 8px; }
-.avatar-zoom input { flex: 1; accent-color: #fff; }
-.avatar-zoom span { color: rgba(255,255,255,0.5); font-size: var(--font-xs); }
+.avatar-zoom { display: flex; align-items: center; gap: 4px; justify-content: center; align-self: center; }
+.avatar-zoom-track { width: 96px; height: 1px; background: var(--color-border); border-radius: 1px; position: relative; }
+.avatar-zoom-thumb { width: 10px; height: 10px; border-radius: 50%; background: #999; position: absolute; top: -4.5px; transition: none; }
+.avatar-zoom-thumb.hidden { opacity: 0; }
+.avatar-zoom span { color: var(--color-muted); font-size: 9px; position: relative; top: -1px; }
 
 /* --- Empty state --- */
 .empty { text-align: center; padding: 48px 24px; color: var(--color-muted); }
@@ -406,9 +407,10 @@ function renderProfilePrompt() {
       <div class="avatar-upload" id="avatar-upload" onclick="uploadAvatar()">
         ${currentUser?.avatar_url ? '<img src="' + currentUser.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
       </div>
-      <input id="name-input" placeholder="Your name" maxlength="30" value="${currentUser?.display_name || ''}">
+      <div class="avatar-zoom" id="avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="avatar-zoom-thumb"></div></div><span>+</span></div>
+      <input id="name-input" placeholder="Name" maxlength="30" value="${currentUser?.display_name || ''}">
       <div class="country-picker" id="country-picker">
-        <input id="country-input" placeholder="Select country" value="${countryDisplay}" readonly onclick="toggleCountryPicker()">
+        <input id="country-input" placeholder="Country" value="${countryDisplay}" onclick="toggleCountryPicker()" onfocus="toggleCountryPicker()">
         <div class="country-list" id="country-list"></div>
       </div>
       <button onclick="submitProfile()">Continue</button>
@@ -426,14 +428,15 @@ function toggleCountryPicker() {
   input.value = '';
   input.placeholder = 'Search country...';
   input.focus();
-  renderCountryList('');
-  input.oninput = () => renderCountryList(input.value);
+  let _hlIdx = 0;
+  renderCountryList('', 0);
+  input.oninput = () => { _hlIdx = 0; renderCountryList(input.value, _hlIdx); };
   input.onkeydown = (e) => {
-    if (e.key === 'Escape') closeCountryPicker();
-    if (e.key === 'Enter') {
-      const first = document.querySelector('.country-item');
-      if (first) first.click();
-    }
+    if (e.key === 'Escape') { closeCountryPicker(); return; }
+    const items = document.querySelectorAll('.country-item[data-code]');
+    if (e.key === 'ArrowDown') { e.preventDefault(); _hlIdx = Math.min(_hlIdx + 1, items.length - 1); highlightCountryItem(items, _hlIdx); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); _hlIdx = Math.max(_hlIdx - 1, 0); highlightCountryItem(items, _hlIdx); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items[_hlIdx]) items[_hlIdx].click(); }
   };
   setTimeout(() => document.addEventListener('click', _countryOutsideClick), 10);
 }
@@ -460,14 +463,20 @@ function closeCountryPicker() {
   document.removeEventListener('click', _countryOutsideClick);
 }
 
-function renderCountryList(query) {
+function renderCountryList(query, hlIdx) {
   const list = document.getElementById('country-list');
   if (!list) return;
   const q = query.toLowerCase();
-  const filtered = COUNTRIES.filter(([code, name, alt]) => name.toLowerCase().includes(q) || code.toLowerCase().includes(q) || (alt && alt.toLowerCase().includes(q)));
-  list.innerHTML = filtered.map(([code, name]) =>
-    `<div class="country-item" onclick="selectCountry('${code}')"><span class="flag">${FLAG(code)}</span>${escapeHtml(name)}</div>`
+  const matchStart = (haystack, needle) => haystack.toLowerCase().startsWith(needle) || haystack.split(/[\s-]+/).some(w => w.toLowerCase().startsWith(needle));
+  const filtered = COUNTRIES.filter(([code, name, alt]) => matchStart(name, q) || code.toLowerCase().startsWith(q) || (alt && alt.split(/\s+/).some(w => w.toLowerCase().startsWith(q))));
+  list.innerHTML = filtered.map(([code, name], i) =>
+    `<div class="country-item${i === (hlIdx || 0) ? ' highlighted' : ''}" data-code="${code}" onclick="selectCountry('${code}')"><span class="flag">${FLAG(code)}</span>${escapeHtml(name)}</div>`
   ).join('') || '<div class="country-item" style="color:var(--color-muted)">No results</div>';
+}
+
+function highlightCountryItem(items, idx) {
+  items.forEach((el, i) => el.classList.toggle('highlighted', i === idx));
+  if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
 }
 
 function selectCountry(code) {
@@ -496,8 +505,8 @@ async function initAvatarEditor(file) {
   const natW = bmp.width, natH = bmp.height;
   bmp.close();
   const minScale = 128 / Math.min(natW, natH);
-  const maxScale = Math.max(minScale * 4, 1);
-  const initScale = minScale;
+  const maxScale = Math.max(minScale * 6, 1);
+  const initScale = minScale * 2;
   _avatarState = { file, natW, natH, scale: initScale, minScale, maxScale, x: 0, y: 0 };
   _avatarState.x = -(natW * initScale - 128) / 2;
   _avatarState.y = -(natH * initScale - 128) / 2;
@@ -509,6 +518,34 @@ async function initAvatarEditor(file) {
       <img src="${url}" id="avatar-edit-img">
     </div>`;
   el.onclick = null;
+
+  const thumb = document.getElementById('avatar-zoom-thumb');
+  const track = document.getElementById('avatar-zoom-track');
+  thumb.classList.remove('hidden');
+  const initT = (initScale - minScale) / (maxScale - minScale);
+  thumb.style.left = (initT * 86) + 'px';
+
+  let zLastX, zCurrentLeft;
+  const zMove = (e) => {
+    e.preventDefault();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    zCurrentLeft += (cx - zLastX) * 0.4;
+    zLastX = cx;
+    const newLeft = Math.max(0, Math.min(86, zCurrentLeft));
+    thumb.style.left = newLeft + 'px';
+    const t = newLeft / 86;
+    const s = _avatarState;
+    const oldScale = s.scale;
+    s.scale = s.minScale + t * (s.maxScale - s.minScale);
+    const ratio = s.scale / oldScale;
+    s.x = clampAvatarX(64 - (64 - s.x) * ratio);
+    s.y = clampAvatarY(64 - (64 - s.y) * ratio);
+    updateAvatarView();
+  };
+  const zUp = () => { document.removeEventListener('mousemove', zMove); document.removeEventListener('mouseup', zUp); document.removeEventListener('touchmove', zMove); document.removeEventListener('touchend', zUp); };
+  thumb.onmousedown = (e) => { e.preventDefault(); zLastX = e.clientX; zCurrentLeft = parseFloat(thumb.style.left); document.addEventListener('mousemove', zMove); document.addEventListener('mouseup', zUp); };
+  thumb.ontouchstart = (e) => { e.preventDefault(); zLastX = e.touches[0].clientX; zCurrentLeft = parseFloat(thumb.style.left); document.addEventListener('touchmove', zMove, { passive: false }); document.addEventListener('touchend', zUp); };
+
   updateAvatarView();
 
   const edit = document.getElementById('avatar-edit');
@@ -518,23 +555,13 @@ async function initAvatarEditor(file) {
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     const s = _avatarState;
-    s.x = clampAvatarX(origX + cx - startX);
-    s.y = clampAvatarY(origY + cy - startY);
+    s.x = clampAvatarX(origX + (cx - startX));
+    s.y = clampAvatarY(origY + (cy - startY));
     updateAvatarView();
   };
   const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
   edit.onmousedown = (e) => { e.preventDefault(); startX = e.clientX; startY = e.clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
   edit.ontouchstart = (e) => { e.preventDefault(); startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
-  edit.onwheel = (e) => {
-    e.preventDefault();
-    const s = _avatarState;
-    const oldScale = s.scale;
-    s.scale = Math.max(s.minScale, Math.min(s.maxScale, s.scale * (e.deltaY < 0 ? 1.1 : 0.9)));
-    const ratio = s.scale / oldScale;
-    s.x = clampAvatarX(64 - (64 - s.x) * ratio);
-    s.y = clampAvatarY(64 - (64 - s.y) * ratio);
-    updateAvatarView();
-  };
 }
 
 function clampAvatarX(x) { const s = _avatarState; return Math.min(0, Math.max(x, 128 - s.natW * s.scale)); }
@@ -731,7 +758,7 @@ function renderRoomList() {
     app.innerHTML = `
       <div class="header"><button class="back" onclick="goBack()">←</button><span class="title">Chats</span></div>
       <div class="tabs">
-        <button class="active" onclick="switchTab(this,'stages')">Stages</button>
+        <button class="active" onclick="switchTab(this,'stages')">Rooms</button>
         <button onclick="switchTab(this,'meetups')">Meetups</button>
         <button onclick="switchTab(this,'dms')">DMs</button>
       </div>
@@ -741,7 +768,7 @@ function renderRoomList() {
       <div class="sidebar visible">
         <div class="header"><span class="title">Chats</span></div>
         <div class="tabs">
-          <button class="active" onclick="switchTab(this,'stages')">Stages</button>
+          <button class="active" onclick="switchTab(this,'stages')">Rooms</button>
           <button onclick="switchTab(this,'meetups')">Meetups</button>
           <button onclick="switchTab(this,'dms')">DMs</button>
         </div>

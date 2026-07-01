@@ -12,7 +12,7 @@ A multi-event festival companion tool: scraper, enrichment pipeline, static site
 4. **Processes photos** — downloads, resizes to 240x240, encodes to AVIF targeting ssimulacra2 quality score 78
 5. **Generates** an interactive page (~650 KB) with lazy-loaded bios (~200 KB) and timetable data
 6. **Serves** via a FastAPI backend with favorites API, WebSocket sync, push notifications, and ICS calendar export
-7. **Chat** — ephemeral group chat per stage, meetup rooms, DMs, AI-moderated (every message checked by word filter + OpenAI + GPT drug detection)
+7. **Chat** — ephemeral group chat with photo/video sharing, meetups, DMs. AI-moderated (word filter + OpenAI + GPT drug detection). Profile with avatar, country, name. Email magic link auth via Maileroo.
 
 ## Project Structure
 
@@ -39,7 +39,8 @@ stone-techno-companion/
 │   ├── chat/
 │   │   ├── chat.html            # Chat frontend (single file, inline CSS/JS)
 │   │   ├── blocklist.txt        # Drug/slur word filter (editable)
-│   │   └── uploads/             # Chat image uploads (ephemeral)
+│   │   ├── disposable_domains.txt # 7,860 blocked email domains
+│   │   └── uploads/             # Chat media uploads (ephemeral)
 │   ├── static/
 │   │   ├── sw.js                # Service worker for push notifications
 │   │   └── manifest.json        # PWA manifest
@@ -285,28 +286,29 @@ Privacy-first ephemeral group chat at `/chat`. Messages auto-delete after 60 min
 
 ### Features
 
-- **Room types**: per-stage, general, per-meetup (dedicated chat), DMs
-- **Auth**: Google/Apple/Email magic link (passwordless, disposable domains blocked)
-- **Moderation**: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All three layers on every message, layers 2+3 in parallel.
-- **Strike system**: warning → 30-min mute → permanent ban. Drug terms escalate faster.
-- **Optimistic messaging**: messages appear instantly, moderation runs async. Rejected messages removed from sender's view.
-- **Bubble chat**: pastel colors, time bottom-right, WhatsApp-style layout
-- **Replies**: double-click (desktop) / swipe toward center (mobile). Quoted original inside bubble.
-- **Reactions**: 6 emojis (👍❤️😂🔥😮👏). Long-press (mobile) / hover button (desktop). Pills at bubble border.
-- **Meetups**: first-class entities with dedicated chat rooms, GPS location, datetime picker, attendee list
-- **Blocking**: prevents DMs, hides messages client-side
-- **Reporting**: message snapshot survives 60-min deletion for admin review
-- **Admin page**: `/chat/admin?admin_token=...` — pending reports, ban/dismiss buttons
-- **Desktop**: sidebar + chat panel side-by-side
-- **Auto-purge**: 30-second cycle deletes expired messages, meetups, sessions. Clients notified via WebSocket.
-- **Self-verifying debug**: every action checks its DOM outcome (✓/✗ in console)
+- **Single room per event** — auto-opens on login, no room list
+- **Auth**: Email magic link via Maileroo (DB-backed tokens, survive restarts). Google/Apple OAuth ready (backend implemented). 7,860 disposable domains blocked. Email validated via RFC 5322 + DNS MX.
+- **Profile**: mandatory name + country + avatar. Circular pan+zoom avatar editor with friction slider, 128x128 AVIF stored in DB. Searchable country dropdown with 195 countries + local name aliases, arrow key navigation.
+- **Moderation**: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. Images moderated via WebP data URI, videos via 3 extracted frames. All layers on every message, 2+3 in parallel.
+- **Strike system**: warning, 30-min mute, permanent ban. Drug terms escalate faster.
+- **Media**: photos (client resize + WebP + server AVIF), videos (Mediabunny + WebCodecs, HEVC/H.264 fallback, hardware-accelerated, trim editor for >60s), location sharing, meetup cards. All with SVG icons.
+- **Optimistic messaging**: messages appear instantly, moderation runs async. Rejected messages removed.
+- **Message delete**: right-click/long-press on own messages within 120s, inline confirmation.
+- **Bubble chat**: pastel blue/purple, reply quotes, reactions (hover on desktop, long-press on mobile)
+- **Video player**: inline play/pause, fullscreen icon, frame sync between inline and expanded views
+- **Meetups**: dedicated rooms, GPS location, 15-min interval datetime picker, attendee list
+- **Blocking/Reporting**: prevents DMs, message snapshot preserved for admin review
+- **Admin**: `/chat/admin?admin_token=...` — reports, ban/dismiss
+- **Desktop**: sidebar + chat, centered modals. **Mobile**: bottom drawers (ready for mobile layout)
+- **Auto-purge**: runs on startup + every 30s. Deletes expired messages, meetups, sessions, media files.
 
 ### Chat Database (chat.db, separate from hearts.db)
 
 ```
-users, sessions, bans, rooms, messages (reply_to_id, 60-min TTL),
-message_reactions, meetups (30-min grace), meetup_attendees,
-dm_participants, blocks, reports, strikes
+users (country, avatar_url), sessions, email_tokens, avatars (BLOB),
+bans, rooms, messages (60-min TTL), message_reactions,
+meetups (30-min grace), meetup_attendees, dm_participants,
+blocks, reports, strikes
 ```
 
 ### Tests

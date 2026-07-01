@@ -282,10 +282,12 @@ Extends the existing FastAPI server — no separate service. Two SQLite database
 ### Chat Database (chat.db)
 
 ```
-users              — id, provider, provider_id, display_name, device_fingerprint, muted_until
+users              — id, provider, provider_id, display_name, country, avatar_url, device_fingerprint, muted_until
 sessions           — id, user_id, token, expires_at
+email_tokens       — token, email, provider_id, fingerprint, expires_at (DB-backed, survives restart)
+avatars            — user_id (PK), data (BLOB, AVIF 128x128)
 bans               — id, provider, provider_id, device_fingerprint, reason (survives user deletion)
-rooms              — id, event_id, type (stage/general/meetup/dm), name
+rooms              — id, event_id, type (general/meetup/dm), name — single room per event
 messages           — id, room_id, user_id, type, content, reply_to_id, expires_at (60 min default)
 message_reactions  — message_id + user_id + emoji (PK), CASCADE on message delete
 meetups            — id, creator_id, stage_id, title, location, meetup_time, expires_at (meetup_time + 30 min)
@@ -298,7 +300,15 @@ strikes            — id, user_id, reason, detail
 
 ### Auth
 
-Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev).
+Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via Maileroo, 3,000/mo free). Disposable domains blocked via 7,860-domain blocklist (`chat/disposable_domains.txt`). Email validation via `email-validator` library (RFC 5322 + DNS MX check). Device fingerprinting for ban enforcement. Session cookies (non-httpOnly for WS access, Secure in production, SameSite=Strict in production / Lax in dev, path=/). Email tokens stored in DB (not memory) — survive server restarts.
+
+### Profile Setup
+
+Mandatory before entering chat: display name, country, avatar photo. Profile prompt shown on first login.
+
+- **Avatar**: circular 128px pan+zoom editor. Click to select image (min 128x128), drag to pan, custom friction slider to zoom. Client crops to 128x128 via `createImageBitmap` with `resizeQuality: 'high'`. Server converts to AVIF and stores as blob in `avatars` table. Served via `/chat/api/avatar/{user_id}` with 24h cache.
+- **Country**: searchable dropdown with 195 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only. Arrow key navigation, Enter to select, first result highlighted.
+- **Name**: 3-30 characters.
 
 ### Moderation Pipeline
 
@@ -316,7 +326,7 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 ### Chat UI
 
-WhatsApp-style three-screen flow: room list → chat → back. Single HTML file (`server/chat/chat.html`).
+Single room per event — auto-opens on login (no room list). Single HTML file (`server/chat/chat.html`).
 
 - **Bubble style**: pastel blue (own) / pastel purple (others), dark text, time bottom-right
 - **Replies**: double-click on desktop, swipe toward center on mobile. Quote shown inside bubble.
