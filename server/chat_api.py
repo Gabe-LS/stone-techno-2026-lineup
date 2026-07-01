@@ -96,12 +96,13 @@ def _require_admin(request: Request) -> None:
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
+    is_prod = not os.environ.get("CHAT_BASE_URL", "").startswith("http://")
     response.set_cookie(
         "chat_session",
         token,
         httponly=True,
-        secure=True,
-        samesite="strict",
+        secure=is_prod,
+        samesite="lax" if not is_prod else "strict",
         max_age=7 * 24 * 3600,
     )
 
@@ -228,9 +229,7 @@ async def auth_email_start(request: Request):
                 "CHAT_BASE_URL", "https://stonetechno.deftlab.dev"
             )
             verify_url = f"{base_url}/chat/api/auth/email/verify?token={token}"
-            from_addr = os.environ.get(
-                "CHAT_EMAIL_FROM", "chat@stonetechno.deftlab.dev"
-            )
+            from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
             client.send_basic_email(
                 {
                     "from": EmailAddress(from_addr),
@@ -253,7 +252,7 @@ _email_tokens: dict[str, dict] = {}
 
 
 @router.get("/auth/email/verify")
-async def auth_email_verify(request: Request, response: Response, token: str = ""):
+async def auth_email_verify(request: Request, token: str = ""):
     data = _email_tokens.pop(token, None)
     if not data:
         raise HTTPException(400, "Invalid or expired link")
@@ -262,16 +261,14 @@ async def auth_email_verify(request: Request, response: Response, token: str = "
 
     db = _get_db()
     name = data["email"].split("@")[0]
-    user = _authenticate(
-        db, "email", data["provider_id"], name, data["fingerprint"], response
-    )
+
+    from starlette.responses import RedirectResponse
 
     base_url = os.environ.get("CHAT_BASE_URL", "")
-    redirect_url = f"{base_url}/#chat" if base_url else "/#chat"
-    return HTMLResponse(
-        f'<html><head><meta http-equiv="refresh" content="0;url={redirect_url}"></head>'
-        f"<body>Signed in. Redirecting...</body></html>"
-    )
+    redirect_url = f"{base_url}/chat" if base_url else "/chat"
+    redirect = RedirectResponse(url=redirect_url, status_code=302)
+    _authenticate(db, "email", data["provider_id"], name, data["fingerprint"], redirect)
+    return redirect
 
 
 @router.post("/auth/logout")
