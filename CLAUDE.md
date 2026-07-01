@@ -26,13 +26,24 @@ python stone_techno_companion.py --event-id stone-techno-2026 --event-name "Ston
 
 # Migrate old DB to new schema (one-time, creates backup)
 python migrate_db.py
+
+# Run full server locally (lineup + chat)
+cd server && export $(cat .env | xargs) && uvicorn api:app --port 8080
+# Open http://localhost:8080/ (lineup) and http://localhost:8080/chat (chat)
+
+# Run tests
+python -m pytest tests/ -v
 ```
 
 ## Local Development
 
-**Always preview via HTTP, never `file://`.** The page uses `fetch()` for lazy-loaded bios and API calls. Browsers block fetch from `file://` origins (CORS). Use `python3 -m http.server` from the `output/` directory.
+**Always preview via HTTP, never `file://`.** The page uses `fetch()` for lazy-loaded bios and API calls. Browsers block fetch from `file://` origins (CORS).
 
-Expected 404s when serving locally: `/manifest.json`, `/sw.js`, `/api/me` — these only exist on the production server (FastAPI). The page works fine without them locally.
+**For lineup only**: `cd output && python3 -m http.server 8321` — expected 404s for `/manifest.json`, `/sw.js`, `/api/me`.
+
+**For lineup + chat**: run the full FastAPI server: `cd server && export $(cat .env | xargs) && uvicorn api:app --port 8080`. Requires `OPENAI_API_KEY` in `server/.env` for chat moderation. Symlinks in `server/static/` point to `output/` files so lineup reflects latest build.
+
+**Chat requires auth**: create a test user via `python3 -c "from chat_db import ...; create_user(...)"` and set the session cookie in the browser console.
 
 ## System Dependencies
 
@@ -96,9 +107,19 @@ Key design decisions:
 | `fetch_videos.py` | YouTube set discovery via yt-dlp. Writes to `artist_sets` table with `platform='youtube'`. |
 | `seed_timetable.py` | Seeds fake timetable data (floors + time slots) for development |
 | `migrate_db.py` | One-time migration from any old schema version to current. Creates backup, migrates artists + links + sets + locations + notes. |
-| `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes (`/bios.json`, `/timetable.json`, etc.) |
+| `server/api.py` | FastAPI app — favorites + schedule API + WebSocket sync + push scheduler + ICS export + static file routes. Mounts chat module at startup. |
+| `server/chat_db.py` | Chat SQLite schema (chat.db) — users, sessions, bans, rooms, messages, meetups, reactions, blocks, reports, strikes |
+| `server/chat_moderation.py` | Three-layer moderation: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All via raw httpx. |
+| `server/chat_ws.py` | Chat WebSocket server — rooms, optimistic messaging, presence, typing, reactions, replies, meetups, DMs, purge loop |
+| `server/chat_api.py` | Chat REST API — auth (Google/Apple/Email), rooms, meetups, DMs, media upload, admin page. Mounts routes + WS into FastAPI. |
+| `server/chat/chat.html` | Chat frontend — single HTML file with inline CSS/JS. WhatsApp-style bubbles, reactions, replies, action menus. |
+| `server/chat/blocklist.txt` | Word filter blocklist (drug terms, slurs). Editable without deploy. |
 | `server/static/sw.js` | Service worker — handles push events and notification click navigation |
 | `server/static/manifest.json` | PWA manifest — enables Add to Home Screen and push on iOS |
+| `tests/test_chat_db.py` | 45 tests — users, sessions, bans, rooms, messages, meetups, DMs, blocks, reports, strikes |
+| `tests/test_chat_moderation.py` | 33 tests — word filter, strike system, AI moderation pipeline |
+| `tests/test_chat_ws.py` | 17 tests — WebSocket rooms, messaging, presence, moderation flow |
+| `tests/test_chat_api.py` | 31 tests — REST endpoints, auth, rooms, meetups, DMs, admin |
 
 ### Two deploy paths
 
@@ -216,3 +237,69 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 ## Multi-Event Support
 
 The DB supports multiple events via the `events` table. Artists, artist_links, artist_sets, stages, and venues are global (shared). Schedule and event_stages are scoped per event. CLI flags: `--event-id`, `--event-name`, `--event-edition`. Each event needs its own scraper module — the scraper output format (`parsed` dict with `artists`, `sections`, `locations`, `assignments`) is the interface.
+
+## Chat System
+
+Privacy-first ephemeral chat integrated into the companion app. Accessible via "Chat" button in the command bar / hamburger menu, or directly at `/chat`.
+
+### Architecture
+
+Extends the existing FastAPI server — no separate service. Two SQLite databases: `hearts.db` (favorites, unchanged) and `chat.db` (ephemeral chat data). Chat module mounted at startup via `chat_api.mount_chat(app)`, registered before the catch-all `/{path:path}` route.
+
+### Chat Database (chat.db)
+
+```
+users              — id, provider, provider_id, display_name, device_fingerprint, muted_until
+sessions           — id, user_id, token, expires_at
+bans               — id, provider, provider_id, device_fingerprint, reason (survives user deletion)
+rooms              — id, event_id, type (stage/general/meetup/dm), name
+messages           — id, room_id, user_id, type, content, reply_to_id, expires_at (60 min default)
+message_reactions  — message_id + user_id + emoji (PK), CASCADE on message delete
+meetups            — id, creator_id, stage_id, title, location, meetup_time, expires_at (meetup_time + 30 min)
+meetup_attendees   — meetup_id + user_id (PK)
+dm_participants    — room_id + user_id (PK)
+blocks             — blocker_id + blocked_id (PK)
+reports            — id, reporter_id, reported_user_id, message_snapshot, reason, status
+strikes            — id, user_id, reason, detail
+```
+
+### Auth
+
+Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via Resend, disposable domains blocked). Device fingerprinting for ban enforcement. Session cookies (HTTP-only, Secure, SameSite=Strict).
+
+### Moderation Pipeline
+
+Every message passes through three layers before broadcast:
+
+1. **Word filter** (instant) — in-memory set from `chat/blocklist.txt`. Drug terms, slurs, spam. Character substitution normalization (@→a, 0→o, etc.).
+2. **OpenAI omni-moderation-latest** (free) — harassment, hate, violence, sexual content, images. Via raw httpx.
+3. **GPT-5.4-nano drug detection** (Responses API, reasoning=none, ~$4.65/festival) — custom prompt catches subtle drug slang (party favors, rolling, just dropped, etc.).
+
+Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
+
+**Optimistic delivery**: message saved to DB immediately, `message_acked` sent to sender, moderation runs in `asyncio.create_task`. If passes: broadcast to others. If fails: delete from DB, send `message_removed` + strike to sender.
+
+**Strike system**: 1st = warning, 2nd = 30-min mute, 3rd = permanent ban. Drug terms escalate: 2nd drug offense = immediate ban. Bans stored by provider_id + device fingerprint.
+
+### Chat UI
+
+WhatsApp-style three-screen flow: room list → chat → back. Single HTML file (`server/chat/chat.html`).
+
+- **Bubble style**: pastel blue (own) / pastel purple (others), dark text, time bottom-right
+- **Replies**: double-click on desktop, swipe toward center on mobile. Quote shown inside bubble.
+- **Reactions**: long-press (mobile) / hover button (desktop) → 6-emoji picker (👍❤️😂🔥😮👏). Pills positioned half-outside bubble border.
+- **Input bar**: + button (photo, location, meetup) on left, emoji icon on right
+- **Meetup creation**: modal with title, datetime picker, GPS location, note
+- **User menu**: bottom action sheet (Send Message, Block User, Cancel)
+- **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
+- **Desktop**: sidebar + chat panel side-by-side (768px breakpoint)
+- **Font scale**: 15px (base) → 13px (secondary) → 11px (tertiary) → 10px (timestamps)
+- **Self-verifying debug**: `verify()` function checks DOM state after every action. Console shows ✓/✗ for each operation.
+
+### Chat Tests
+
+126 tests total: `python -m pytest tests/ -v`
+- `test_chat_db.py` (45) — all CRUD, cascade deletes, purge, wipe
+- `test_chat_moderation.py` (33) — word filter, AI mocks, strike escalation, drug detection
+- `test_chat_ws.py` (17) — WebSocket rooms, messaging, presence, moderation flow
+- `test_chat_api.py` (31) — REST endpoints, auth, rooms, meetups, DMs, admin

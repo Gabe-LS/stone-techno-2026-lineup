@@ -1,6 +1,6 @@
 # Stone Techno Companion
 
-A multi-event festival companion tool: scraper, enrichment pipeline, and static site generator with real-time favorites, cross-device sync, and push notifications.
+A multi-event festival companion tool: scraper, enrichment pipeline, static site generator, and ephemeral chat with AI moderation. Includes real-time favorites, cross-device sync, push notifications, and privacy-first group chat with meetups.
 
 **Live at:** [stonetechno.deftlab.dev](https://stonetechno.deftlab.dev/)
 
@@ -12,6 +12,7 @@ A multi-event festival companion tool: scraper, enrichment pipeline, and static 
 4. **Processes photos** — downloads, resizes to 240x240, encodes to AVIF targeting ssimulacra2 quality score 78
 5. **Generates** an interactive page (~650 KB) with lazy-loaded bios (~200 KB) and timetable data
 6. **Serves** via a FastAPI backend with favorites API, WebSocket sync, push notifications, and ICS calendar export
+7. **Chat** — ephemeral group chat per stage, meetup rooms, DMs, AI-moderated (every message checked by word filter + OpenAI + GPT drug detection)
 
 ## Project Structure
 
@@ -30,7 +31,15 @@ stone-techno-companion/
 │   ├── overrides.toml           # Manual corrections for links, curators, YouTube
 │   └── icons/                   # SVG icons — deduplicated via <symbol>/<use> sprite
 ├── server/
-│   ├── api.py                   # FastAPI — favorites + schedule + push + ICS + sync
+│   ├── api.py                   # FastAPI — favorites + schedule + push + ICS + chat mount
+│   ├── chat_db.py               # Chat SQLite schema + CRUD (chat.db)
+│   ├── chat_moderation.py       # Word filter + OpenAI + GPT drug detection
+│   ├── chat_ws.py               # Chat WebSocket server + purge loop
+│   ├── chat_api.py              # Chat REST API + admin page + auth
+│   ├── chat/
+│   │   ├── chat.html            # Chat frontend (single file, inline CSS/JS)
+│   │   ├── blocklist.txt        # Drug/slur word filter (editable)
+│   │   └── uploads/             # Chat image uploads (ephemeral)
 │   ├── static/
 │   │   ├── sw.js                # Service worker for push notifications
 │   │   └── manifest.json        # PWA manifest
@@ -38,6 +47,11 @@ stone-techno-companion/
 │   ├── Dockerfile               # Python 3.12 slim + uvicorn
 │   ├── docker-compose.yml       # Container config with volume mounts
 │   └── requirements.txt         # fastapi, uvicorn[standard], pywebpush
+├── tests/
+│   ├── test_chat_db.py          # 45 tests
+│   ├── test_chat_moderation.py  # 33 tests
+│   ├── test_chat_ws.py          # 17 tests
+│   └── test_chat_api.py         # 31 tests
 ├── .github/workflows/
 │   └── deploy.yml               # Auto-deploy server to VPS on push to main
 ├── output/                      # Generated (gitignored)
@@ -264,6 +278,40 @@ stonetechno.deftlab.dev {
 - **Responsive**: mobile breakpoint at 480px, hamburger menu, `@media (hover: hover)` guards
 - **PWA**: manifest, service worker, Add to Home Screen support
 - **WCAG 2.1 AA**: contrast ratios, 12px minimum font size, no text below accessible floor
+
+## Chat System
+
+Privacy-first ephemeral group chat at `/chat`. Messages auto-delete after 60 minutes. AI moderation on every message.
+
+### Features
+
+- **Room types**: per-stage, general, per-meetup (dedicated chat), DMs
+- **Auth**: Google/Apple/Email magic link (passwordless, disposable domains blocked)
+- **Moderation**: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. All three layers on every message, layers 2+3 in parallel.
+- **Strike system**: warning → 30-min mute → permanent ban. Drug terms escalate faster.
+- **Optimistic messaging**: messages appear instantly, moderation runs async. Rejected messages removed from sender's view.
+- **Bubble chat**: pastel colors, time bottom-right, WhatsApp-style layout
+- **Replies**: double-click (desktop) / swipe toward center (mobile). Quoted original inside bubble.
+- **Reactions**: 6 emojis (👍❤️😂🔥😮👏). Long-press (mobile) / hover button (desktop). Pills at bubble border.
+- **Meetups**: first-class entities with dedicated chat rooms, GPS location, datetime picker, attendee list
+- **Blocking**: prevents DMs, hides messages client-side
+- **Reporting**: message snapshot survives 60-min deletion for admin review
+- **Admin page**: `/chat/admin?admin_token=...` — pending reports, ban/dismiss buttons
+- **Desktop**: sidebar + chat panel side-by-side
+- **Auto-purge**: 30-second cycle deletes expired messages, meetups, sessions. Clients notified via WebSocket.
+- **Self-verifying debug**: every action checks its DOM outcome (✓/✗ in console)
+
+### Chat Database (chat.db, separate from hearts.db)
+
+```
+users, sessions, bans, rooms, messages (reply_to_id, 60-min TTL),
+message_reactions, meetups (30-min grace), meetup_attendees,
+dm_participants, blocks, reports, strikes
+```
+
+### Tests
+
+126 tests: `python -m pytest tests/ -v`
 
 ## Multi-Event Support
 
