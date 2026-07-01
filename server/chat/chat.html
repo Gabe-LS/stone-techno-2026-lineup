@@ -102,10 +102,10 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .room-dot.online { background: var(--color-success); }
 .room-dot.offline { background: var(--gray-400); }
 .room-info { flex: 1; min-width: 0; }
-.room-name { font-weight: 600; font-size: var(--font-base); }
+.room-name { font-weight: 600; font-size: var(--font-sm); line-height: 1.2; }
 .room-preview { font-size: var(--font-xs); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .room-meta { text-align: right; flex-shrink: 0; }
-.room-count { font-size: var(--font-xs); color: var(--color-muted); margin-top: 2px; }
+.room-count { font-size: var(--font-xxs); color: var(--gray-400); line-height: 1.2; }
 
 /* --- Avatar --- */
 .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--font-sm); color: #fff; flex-shrink: 0; }
@@ -1026,12 +1026,12 @@ function renderRoomList() {
   const app = document.getElementById('app');
   const roomsHtml = rooms.map(r => {
     const count = (onlineByRoom[r.id] || []).length || r.online_count;
-    return `<li class="room-item" data-room-id="${r.id}" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
+    const unread = unreadByRoom[r.id] || 0;
+    const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+    return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
       <div class="room-dot ${count > 0 ? 'online' : 'offline'}"></div>
-      <div class="room-info">
-        <div class="room-name">${esc(r.name)}</div>
-      </div>
-      <div class="room-meta"><div class="room-count">${count} ${USER_ICON}</div></div>
+      <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${count} online</div></div>
+      <div class="room-meta">${badgeHtml}</div>
     </li>`;
   }).join('');
 
@@ -1097,7 +1097,7 @@ function updateSidebarCount(roomId) {
   if (!item) return;
   const countEl = item.querySelector('.room-count');
   const dotEl = item.querySelector('.room-dot');
-  if (countEl) countEl.innerHTML = count + ' ' + USER_ICON;
+  if (countEl) countEl.textContent = count + ' online';
   if (dotEl) { dotEl.classList.toggle('online', count > 0); dotEl.classList.toggle('offline', count === 0); }
 }
 
