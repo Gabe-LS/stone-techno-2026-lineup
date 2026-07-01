@@ -2730,7 +2730,13 @@ async function route() {
       await new Promise(r => setTimeout(r, 500));
       scrollToMessage(pathMsg);
       history.replaceState(null, '', '/chat');
-    } catch (e) { dbg('[NAV] message not found:', e.message); }
+    } catch (e) {
+      dbg('[NAV] message not found:', e.message);
+      showToast('Message no longer available');
+      if (rooms.length === 1) openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
+      else renderRoomList();
+      history.replaceState(null, '', '/chat');
+    }
   } else if (targetRoom) {
     const roomId = targetRoom;
     const room = rooms.find(r => r.id === roomId);
