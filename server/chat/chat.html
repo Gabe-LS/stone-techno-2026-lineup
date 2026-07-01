@@ -439,10 +439,8 @@ function renderAuth() {
   verify('renderAuth', document.getElementById('email-input'), 'email input exists');
 }
 
-async function authGoogle() { showToast('Google Sign-In not configured yet'); }
-  dbg('[AUTH] authGoogle');
-async function authApple() { showToast('Apple Sign-In not configured yet'); }
-  dbg('[AUTH] authApple');
+async function authGoogle() { dbg('[AUTH] authGoogle'); showToast('Google Sign-In not configured yet'); }
+async function authApple() { dbg('[AUTH] authApple'); showToast('Apple Sign-In not configured yet'); }
 async function authEmail() {
   dbg('[AUTH] authEmail');
   const input = document.getElementById('email-input');
@@ -1942,8 +1940,7 @@ function uploadVideo() {
   input.click();
 }
 
-function openEmoji() { showToast('Emoji picker coming in v2'); }
-  dbg('[CHAT] openEmoji');
+function openEmoji() { dbg('[CHAT] openEmoji'); showToast('Emoji picker coming in v2'); }
 
 // --- Meetup modal ---
 let _meetupCoords = null;
