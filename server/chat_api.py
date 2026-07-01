@@ -389,6 +389,17 @@ async def auth_update_profile(request: Request):
         params.append(username)
         updates.append("username_lower = ?")
         params.append(username.lower())
+
+    text_to_moderate = " ".join(filter(None, [username, name]))
+    if text_to_moderate:
+        from chat_moderation import check_openai_moderation
+
+        ai_result = await check_openai_moderation(text_to_moderate)
+        if ai_result:
+            raise HTTPException(
+                400, f"Name not allowed: {ai_result.get('category', 'content policy')}"
+            )
+
     country = body.get("country")
     if country is not None:
         updates.append("country = ?")

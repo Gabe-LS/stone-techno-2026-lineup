@@ -495,8 +495,9 @@ function renderProfilePrompt() {
         <div class="field-hint" id="username-hint">Letters, numbers, periods, underscores, hyphens</div>
       </div>
       <div class="profile-field">
-        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="updateProfilePreview()">
-        <div class="field-hint" id="displayname-hint"></div>
+        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()">
+        <span class="field-status" id="displayname-status"></span>
+        <div class="field-hint" id="displayname-hint">Shown in chat instead of username</div>
       </div>
       <div class="country-picker" id="country-picker">
         <input id="country-input" placeholder="Country" value="${countryDisplay}" onclick="toggleCountryPicker()" onfocus="toggleCountryPicker()">
@@ -539,6 +540,35 @@ function onUsernameInput() {
       hint.className = 'field-hint' + (r.available ? '' : ' err');
     } catch { status.textContent = ''; }
     updateProfilePreview();
+  }, 400);
+}
+
+let _displaynameTimer = null;
+
+function onDisplayNameInput() {
+  clearTimeout(_displaynameTimer);
+  updateProfilePreview();
+  const val = document.getElementById('displayname-input').value.trim();
+  const status = document.getElementById('displayname-status');
+  const hint = document.getElementById('displayname-hint');
+  if (!val) {
+    status.textContent = '';
+    hint.textContent = 'Shown in chat instead of username';
+    hint.className = 'field-hint';
+    return;
+  }
+  if (val.length < 2) { status.textContent = ''; hint.textContent = 'At least 2 characters'; hint.className = 'field-hint err'; return; }
+  status.textContent = '...';
+  status.className = 'field-status';
+  _displaynameTimer = setTimeout(async () => {
+    try {
+      const r = await api('/auth/check-displayname?name=' + encodeURIComponent(val));
+      if (document.getElementById('displayname-input').value.trim() !== val) return;
+      status.textContent = r.available ? 'ok' : '';
+      status.className = 'field-status ' + (r.available ? 'ok' : 'err');
+      hint.textContent = r.available ? 'Looks good' : r.reason;
+      hint.className = 'field-hint' + (r.available ? '' : ' err');
+    } catch { status.textContent = ''; }
   }, 400);
 }
 
