@@ -197,7 +197,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 /* --- Action sheet (mobile bottom drawer / desktop centered modal) --- */
 .action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: flex-end; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .action-sheet-overlay.open { opacity: 1; }
-.action-sheet { background: var(--color-bg); width: 100%; max-width: 400px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-sm) 0; padding-bottom: env(safe-area-inset-bottom, var(--space-sm)); transform: translateY(100%); transition: transform 0.25s ease-out; }
+.action-sheet { background: var(--color-bg); width: 100%; max-width: 360px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: var(--space-sm) 0; padding-bottom: env(safe-area-inset-bottom, var(--space-sm)); transform: translateY(100%); transition: transform 0.25s ease-out; }
 .action-sheet-overlay.open .action-sheet { transform: translateY(0); }
 .action-sheet-title { text-align: center; font-weight: 600; font-size: var(--font-sm); color: var(--color-muted); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); }
 .action-sheet-btn { display: block; width: 100%; padding: var(--space-md) var(--space-lg); border: none; background: none; font-size: var(--font-base); cursor: pointer; text-align: center; font-family: inherit; color: var(--color-text); }
@@ -206,7 +206,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .action-sheet-cancel { color: var(--color-muted); border-top: 1px solid var(--color-border); margin-top: var(--space-xs); }
 @media (min-width: 768px) {
   .action-sheet-overlay { align-items: center; }
-  .action-sheet { border-radius: var(--radius-lg); max-width: 320px; transform: scale(0.95); opacity: 0; padding-bottom: var(--space-sm); }
+  .action-sheet { border-radius: var(--radius-lg); max-width: 360px; transform: scale(0.95); opacity: 0; padding-bottom: var(--space-sm); }
   .action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
 }
 
@@ -230,7 +230,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 /* --- Modal --- */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .modal-overlay.open { opacity: 1; }
-.modal { background: var(--color-bg); width: calc(100% - var(--space-2xl)); max-width: 400px; border-radius: var(--radius-lg); overflow: hidden; transform: scale(0.95); transition: transform 0.2s; }
+.modal { background: var(--color-bg); width: calc(100% - var(--space-2xl)); max-width: 400px; border-radius: var(--radius-lg); overflow: visible; transform: scale(0.95); transition: transform 0.2s; }
 .modal-overlay.open .modal { transform: scale(1); }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); }
 .modal-title { font-weight: 600; font-size: var(--font-base); }
@@ -1645,7 +1645,7 @@ function showTrimEditor(file, objectUrl, duration) {
     const overlay = document.createElement('div');
     overlay.id = 'trim-editor';
     overlay.className = 'modal-overlay';
-    overlay.innerHTML = `<div class="modal" style="max-width:480px" onclick="event.stopPropagation()">
+    overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
       <div class="modal-header">
         <span class="modal-title">Trim Video (max ${maxClip}s)</span>
         <button class="modal-close" id="trim-cancel">&times;</button>
@@ -2123,15 +2123,16 @@ function openProfileModal() {
   const overlay = document.createElement('div');
   overlay.id = 'profile-modal';
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
+  overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
     <div class="modal-header">
       <span class="modal-title">Edit Profile</span>
       <button class="modal-close" onclick="closeProfileModal()">&times;</button>
     </div>
     <div class="modal-body" style="align-items:center;gap:var(--space-md)">
-      <div class="avatar-upload" id="edit-avatar" onclick="editProfileAvatar()" style="width:80px;height:80px">
+      <div class="avatar-upload" id="edit-avatar-upload" onclick="editProfileAvatar()" style="width:80px;height:80px">
         ${u.avatar_url ? '<img src="' + u.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none" style="width:24px;height:24px;color:var(--color-disabled)"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
       </div>
+      <div class="avatar-zoom" id="edit-avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="edit-avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="edit-avatar-zoom-thumb"></div></div><span>+</span></div>
       <div class="profile-field" style="width:100%">
         <input id="edit-displayname" value="${escapeHtml(u.display_name || '')}" maxlength="30" placeholder="Display name (optional)" autocomplete="off" autocorrect="off" spellcheck="false" oninput="onEditDisplayNameInput()">
         <span class="field-status" id="edit-displayname-status"></span>
@@ -2286,6 +2287,8 @@ function selectEditCountry(code) {
   if (status) { status.textContent = code ? 'ok' : ''; status.className = 'field-status' + (code ? ' ok' : ''); }
 }
 
+let _editAvatarState = null;
+
 function editProfileAvatar() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
@@ -2294,27 +2297,111 @@ function editProfileAvatar() {
     if (!file) return;
     const bmp = await createImageBitmap(file);
     if (bmp.width < 128 || bmp.height < 128) { bmp.close(); showToast('Image must be at least 128x128'); return; }
-    const cropSize = Math.min(bmp.width, bmp.height);
-    const cropX = (bmp.width - cropSize) / 2;
-    const cropY = (bmp.height - cropSize) / 2;
     bmp.close();
-    const cropped = await createImageBitmap(file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
-    const canvas = new OffscreenCanvas(128, 128);
-    canvas.getContext('bitmaprenderer').transferFromImageBitmap(cropped);
-    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
-    const form = new FormData();
-    form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
-    try {
-      const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
-      if (!resp.ok) throw new Error('Upload failed');
-      const result = await resp.json();
-      _editAvatarUrl = result.url;
-      const el = document.getElementById('edit-avatar');
-      if (el) el.innerHTML = '<img src="' + result.url + '">';
-      updateEditPreview();
-    } catch (e) { showToast(e.message || 'Upload failed'); }
+    initEditAvatarEditor(file);
   };
   input.click();
+}
+
+async function initEditAvatarEditor(file) {
+  const bmp = await createImageBitmap(file);
+  const origW = bmp.width, origH = bmp.height;
+  bmp.close();
+
+  let previewFile = file;
+  let natW = origW, natH = origH;
+  if (origW > 2000 || origH > 2000) {
+    const scale = 2000 / Math.max(origW, origH);
+    natW = Math.round(origW * scale);
+    natH = Math.round(origH * scale);
+    const resized = await createImageBitmap(file, { resizeWidth: natW, resizeHeight: natH, resizeQuality: 'high' });
+    const canvas = new OffscreenCanvas(natW, natH);
+    canvas.getContext('bitmaprenderer').transferFromImageBitmap(resized);
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+    previewFile = new File([blob], 'preview.webp', { type: 'image/webp' });
+  }
+
+  const previewScale = origW / natW;
+  const sz = 80;
+  const minScale = sz / Math.min(natW, natH);
+  const maxScale = Math.max(minScale * 6, 1);
+  const initScale = minScale * 2;
+  _editAvatarState = { file, previewFile, natW, natH, origW, origH, previewScale, scale: initScale, minScale, maxScale, x: 0, y: 0, size: sz };
+  _editAvatarState.x = -(natW * initScale - sz) / 2;
+  _editAvatarState.y = -(natH * initScale - sz) / 2;
+
+  const url = URL.createObjectURL(previewFile);
+  const el = document.getElementById('edit-avatar-upload');
+  el.innerHTML = `<div class="avatar-edit" id="edit-avatar-edit" style="width:${sz}px;height:${sz}px"><img src="${url}" id="edit-avatar-img"></div>`;
+  let dragged = false;
+  el.onclick = () => { if (!dragged) editProfileAvatar(); };
+
+  const thumb = document.getElementById('edit-avatar-zoom-thumb');
+  thumb.classList.remove('hidden');
+  const initT = (initScale - minScale) / (maxScale - minScale);
+  thumb.style.left = (initT * 86) + 'px';
+
+  let zLastX, zCurrentLeft;
+  const zMove = (e) => {
+    e.preventDefault();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    zCurrentLeft += (cx - zLastX) * 0.4;
+    zLastX = cx;
+    const newLeft = Math.max(0, Math.min(86, zCurrentLeft));
+    thumb.style.left = newLeft + 'px';
+    const t = newLeft / 86;
+    const s = _editAvatarState;
+    const oldScale = s.scale;
+    s.scale = s.minScale + t * (s.maxScale - s.minScale);
+    const ratio = s.scale / oldScale;
+    s.x = editClampX(sz / 2 - (sz / 2 - s.x) * ratio);
+    s.y = editClampY(sz / 2 - (sz / 2 - s.y) * ratio);
+    updateEditAvatarView();
+  };
+  const zUp = () => { document.removeEventListener('mousemove', zMove); document.removeEventListener('mouseup', zUp); document.removeEventListener('touchmove', zMove); document.removeEventListener('touchend', zUp); };
+  thumb.onmousedown = (e) => { e.preventDefault(); zLastX = e.clientX; zCurrentLeft = parseFloat(thumb.style.left); document.addEventListener('mousemove', zMove); document.addEventListener('mouseup', zUp); };
+  thumb.ontouchstart = (e) => { e.preventDefault(); zLastX = e.touches[0].clientX; zCurrentLeft = parseFloat(thumb.style.left); document.addEventListener('touchmove', zMove, { passive: false }); document.addEventListener('touchend', zUp); };
+
+  updateEditAvatarView();
+
+  const edit = document.getElementById('edit-avatar-edit');
+  let startX, startY, origX, origY;
+  const onMove = (e) => { e.preventDefault(); dragged = true; const cx = e.touches ? e.touches[0].clientX : e.clientX; const cy = e.touches ? e.touches[0].clientY : e.clientY; _editAvatarState.x = editClampX(origX + (cx - startX)); _editAvatarState.y = editClampY(origY + (cy - startY)); updateEditAvatarView(); };
+  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); setTimeout(() => { dragged = false; }, 10); };
+  edit.onmousedown = (e) => { e.preventDefault(); dragged = false; startX = e.clientX; startY = e.clientY; origX = _editAvatarState.x; origY = _editAvatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
+  edit.ontouchstart = (e) => { e.preventDefault(); dragged = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _editAvatarState.x; origY = _editAvatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
+}
+
+function editClampX(x) { const s = _editAvatarState; return Math.min(0, Math.max(x, s.size - s.natW * s.scale)); }
+function editClampY(y) { const s = _editAvatarState; return Math.min(0, Math.max(y, s.size - s.natH * s.scale)); }
+
+let _editAvatarPreviewTimer = null;
+function updateEditAvatarView() {
+  const img = document.getElementById('edit-avatar-img');
+  if (!img || !_editAvatarState) return;
+  const s = _editAvatarState;
+  img.style.width = (s.natW * s.scale) + 'px';
+  img.style.height = (s.natH * s.scale) + 'px';
+  img.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
+  clearTimeout(_editAvatarPreviewTimer);
+  _editAvatarPreviewTimer = setTimeout(updateEditAvatarPreview, 400);
+}
+
+async function updateEditAvatarPreview() {
+  const s = _editAvatarState;
+  if (!s) return;
+  const cropX = -s.x / s.scale;
+  const cropY = -s.y / s.scale;
+  const cropSize = s.size / s.scale;
+  try {
+    const bmp = await createImageBitmap(s.previewFile, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
+    const canvas = new OffscreenCanvas(128, 128);
+    canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    if (_editAvatarUrl) URL.revokeObjectURL(_editAvatarUrl);
+    _editAvatarUrl = URL.createObjectURL(blob);
+    updateEditPreview();
+  } catch {}
 }
 
 async function saveProfile() {
@@ -2324,7 +2411,23 @@ async function saveProfile() {
     const body = {};
     if (displayName !== (currentUser?.display_name || '')) body.display_name = displayName || '';
     if (country !== (currentUser?.country || '')) body.country = country;
-    if (_editAvatarUrl) body.avatar_url = _editAvatarUrl;
+    if (_editAvatarState) {
+      showToast('Processing photo...');
+      const s = _editAvatarState;
+      const cropX = (-s.x / s.scale) * s.previewScale;
+      const cropY = (-s.y / s.scale) * s.previewScale;
+      const cropSize = (s.size / s.scale) * s.previewScale;
+      const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
+      const canvas = new OffscreenCanvas(128, 128);
+      canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+      const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+      const form = new FormData();
+      form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
+      const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
+      if (!resp.ok) throw new Error('Upload failed');
+      const result = await resp.json();
+      body.avatar_url = result.url;
+    }
     if (Object.keys(body).length === 0) { closeProfileModal(); return; }
     await api('/auth/profile', {
       method: 'PUT',
@@ -2333,7 +2436,8 @@ async function saveProfile() {
     });
     if (body.display_name !== undefined) currentUser.display_name = displayName;
     if (body.country) currentUser.country = country;
-    if (body.avatar_url) currentUser.avatar_url = _editAvatarUrl;
+    if (body.avatar_url) currentUser.avatar_url = body.avatar_url;
+    _editAvatarState = null;
     _editAvatarUrl = '';
     closeProfileModal();
     showToast('Profile updated');
