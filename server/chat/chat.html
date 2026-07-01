@@ -386,6 +386,7 @@ function avatarHtml(name, colorIndex, small, avatarUrl) {
 
 // --- Toast ---
 function showToast(msg, duration) {
+  dbg('[TOAST] showToast', msg);
   if (!duration) {
     const words = msg.trim().split(/\s+/).length;
     duration = Math.max(4000, 1500 + words * 300);
@@ -439,8 +440,11 @@ function renderAuth() {
 }
 
 async function authGoogle() { showToast('Google Sign-In not configured yet'); }
+  dbg('[AUTH] authGoogle');
 async function authApple() { showToast('Apple Sign-In not configured yet'); }
+  dbg('[AUTH] authApple');
 async function authEmail() {
+  dbg('[AUTH] authEmail');
   const input = document.getElementById('email-input');
   const email = input.value.trim();
   if (!email) { showToast('Please enter your email'); return; }
@@ -526,6 +530,7 @@ function renderProfilePrompt() {
 }
 
 function onUsernameInput() {
+  dbg('[PROFILE] onUsernameInput');
   clearTimeout(_usernameTimer);
   _usernameOk = false;
   const status = document.getElementById('username-status');
@@ -559,6 +564,7 @@ function onUsernameInput() {
 let _displaynameTimer = null;
 
 function onDisplayNameInput() {
+  dbg('[PROFILE] onDisplayNameInput');
   clearTimeout(_displaynameTimer);
   updateProfilePreview();
   const val = document.getElementById('displayname-input').value.trim();
@@ -590,6 +596,7 @@ function onDisplayNameInput() {
 let _previewAvatarUrl = '';
 
 function updateProfilePreview() {
+  dbg('[PROFILE] updateProfilePreview');
   const el = document.getElementById('preview-bubble');
   if (!el) return;
   const username = document.getElementById('username-input')?.value || '';
@@ -612,6 +619,7 @@ function updateProfilePreview() {
 }
 
 function openCountryPicker() {
+  dbg('[PROFILE] openCountryPicker');
   const picker = document.getElementById('country-picker');
   if (picker.classList.contains('open')) return;
   picker.classList.add('open');
@@ -638,6 +646,7 @@ function _countryOutsideClick(e) {
 }
 
 function closeCountryPicker() {
+  dbg('[PROFILE] closeCountryPicker');
   const picker = document.getElementById('country-picker');
   if (!picker) return;
   picker.classList.remove('open');
@@ -672,6 +681,7 @@ function highlightCountryItem(items, idx) {
 }
 
 function selectCountry(code) {
+  dbg('[PROFILE] selectCountry', code);
   _selectedCountry = code;
   closeCountryPicker();
   const inp = document.getElementById('country-input');
@@ -683,6 +693,7 @@ function selectCountry(code) {
 let _avatarState = null;
 
 function uploadAvatar() {
+  dbg('[AVATAR] uploadAvatar');
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
   input.onchange = async () => {
@@ -697,6 +708,7 @@ function uploadAvatar() {
 }
 
 async function initAvatarEditor(file) {
+  dbg('[AVATAR] initAvatarEditor', file.name, file.size);
   const bmp = await createImageBitmap(file);
   const origW = bmp.width, origH = bmp.height;
   bmp.close();
@@ -795,6 +807,7 @@ function updateAvatarView() {
 }
 
 async function updateAvatarPreview() {
+  dbg('[AVATAR] updateAvatarPreview');
   const s = _avatarState;
   if (!s) return;
   const cropX = -s.x / s.scale;
@@ -812,6 +825,7 @@ async function updateAvatarPreview() {
 }
 
 async function submitAvatarCrop() {
+  dbg('[AVATAR] submitAvatarCrop');
   const s = _avatarState;
   if (!s) return null;
   const cropX = (-s.x / s.scale) * s.previewScale;
@@ -834,6 +848,7 @@ async function submitAvatarCrop() {
 }
 
 async function submitProfile() {
+  dbg('[PROFILE] submitProfile');
   const username = document.getElementById('username-input').value.trim();
   const displayName = document.getElementById('displayname-input').value.trim();
   const country = _selectedCountry;
@@ -870,6 +885,7 @@ async function submitProfile() {
 // --- WebSocket ---
 let _wsConnecting = false;
 function connectWS() {
+  dbg('[WS] connectWS');
   return new Promise((resolve) => {
     if (_wsConnecting) { resolve(); return; }
     _wsConnecting = true;
@@ -976,11 +992,13 @@ function handleWSEvent(data) {
 
 // --- Room List ---
 async function loadRooms() {
+  dbg('[ROOM] loadRooms');
   try { rooms = await api('/rooms'); } catch { rooms = []; }
   verify('loadRooms', rooms.length > 0, rooms.length + ' rooms loaded');
 }
 
 function renderRoomList() {
+  dbg('[ROOM] renderRoomList');
   const app = document.getElementById('app');
   const roomsHtml = rooms.map(r => {
     const count = (onlineByRoom[r.id] || []).length || r.online_count;
@@ -1024,6 +1042,7 @@ function renderRoomList() {
 }
 
 function switchTab(btn, tab) {
+  dbg('[ROOM] switchTab', tab);
   btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   if (tab === 'meetups') loadMeetups();
@@ -1032,6 +1051,7 @@ function switchTab(btn, tab) {
 }
 
 function renderRoomItems() {
+  dbg('[ROOM] renderRoomItems');
   const el = document.getElementById('room-list');
   if (!el) return;
   el.innerHTML = rooms.map(r => {
@@ -1045,6 +1065,7 @@ function renderRoomItems() {
 }
 
 function updateSidebarCount(roomId) {
+  dbg('[ROOM] updateSidebarCount', roomId);
   const count = (onlineByRoom[roomId] || []).length;
   const item = document.querySelector(`.room-item[data-room-id="${roomId}"]`);
   if (!item) return;
@@ -1055,6 +1076,7 @@ function updateSidebarCount(roomId) {
 }
 
 function updateHeaderCount() {
+  dbg('[ROOM] updateHeaderCount');
   if (!currentRoom) return;
   const count = (onlineByRoom[currentRoom] || []).length;
   const el = document.querySelector('.header .online');
@@ -1062,6 +1084,7 @@ function updateHeaderCount() {
 }
 
 async function loadMeetups() {
+  dbg('[MEETUP] loadMeetups');
   const el = document.getElementById('room-list');
   if (!el) return;
   try {
@@ -1079,6 +1102,7 @@ async function loadMeetups() {
 }
 
 async function loadDMs() {
+  dbg('[DM] loadDMs');
   const el = document.getElementById('room-list');
   if (!el) return;
   try {
@@ -1127,6 +1151,7 @@ async function openRoom(roomId, roomName, roomType) {
 }
 
 function renderChatView(roomName) {
+  dbg('[CHAT] renderChatView', roomName);
   const onlineCount = (onlineByRoom[currentRoom] || []).length;
   const isMeetup = currentRoomType === 'meetup';
   const showMeetupBtn = !isMeetup;
@@ -1216,6 +1241,7 @@ function renderChatView(roomName) {
 }
 
 function renderMessages() {
+  dbg('[CHAT] renderMessages');
   const el = document.getElementById('messages');
   if (!el) { verify('renderMessages', false, '#messages not found'); return; }
   const msgs = messagesByRoom[currentRoom] || [];
@@ -1225,6 +1251,7 @@ function renderMessages() {
 }
 
 function appendMessage(m) {
+  dbg('[CHAT] appendMessage', m.type, m.id);
   const el = document.getElementById('messages');
   if (!el) return;
   el.insertAdjacentHTML('beforeend', renderMessage(m));
@@ -1331,6 +1358,7 @@ function updateReactionPills(msgId, reactions) {
 
 let _scrollLock = null;
 function scrollToBottom() {
+  dbg('[SCROLL] scrollToBottom');
   const el = document.getElementById('msg-scroll');
   if (!el) return;
   el.scrollTop = el.scrollHeight;
@@ -1343,6 +1371,7 @@ function scrollToBottom() {
 }
 
 function updateTypingIndicator() {
+  dbg('[CHAT] updateTypingIndicator');
   const el = document.getElementById('typing');
   if (!el) return;
   const users = Object.keys(typingUsers[currentRoom] || {}).filter(id => id !== currentUser?.id);
@@ -1350,6 +1379,7 @@ function updateTypingIndicator() {
 }
 
 function scrollToMessage(msgId) {
+  dbg('[CHAT] scrollToMessage', msgId);
   const el = document.querySelector(`[data-msg-id="${msgId}"]`);
   if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('highlight'); setTimeout(() => el.classList.remove('highlight'), 1500); }
 }
@@ -1426,6 +1456,7 @@ function replyToMsg(msgId) {
 
 // --- Reply ---
 function setReply(msgId, name, text) {
+  dbg('[REPLY] setReply', msgId, name);
   replyTo = { id: msgId, display_name: name, text: text };
   const preview = document.getElementById('reply-preview');
   if (preview) {
@@ -1439,6 +1470,7 @@ function setReply(msgId, name, text) {
 }
 
 function cancelReply() {
+  dbg('[REPLY] cancelReply');
   replyTo = null;
   document.getElementById('reply-preview')?.classList.remove('visible');
   verify('cancelReply', !replyTo, 'reply cleared');
@@ -1449,6 +1481,7 @@ let _reactDismissTimer = null;
 let _reactActiveBtn = null;
 
 function reactHoverIn(msgId, btn) {
+  dbg('[REACT] reactHoverIn', msgId);
   clearTimeout(_reactDismissTimer);
   const existing = document.getElementById('reaction-picker');
   if (existing && existing._msgId === msgId) return;
@@ -1480,16 +1513,19 @@ function reactHoverIn(msgId, btn) {
 }
 
 function reactHoverOut() {
+  dbg('[REACT] reactHoverOut');
   _reactDismissTimer = setTimeout(closeReactionPicker, 200);
 }
 
 function closeReactionPicker() {
+  dbg('[REACT] closeReactionPicker');
   clearTimeout(_reactDismissTimer);
   document.getElementById('reaction-picker')?.remove();
   if (_reactActiveBtn) { _reactActiveBtn.classList.remove('active'); _reactActiveBtn = null; }
 }
 
 function toggleReaction(msgId, emoji) {
+  dbg('[REACT] toggleReaction', msgId, emoji);
   const msgs = messagesByRoom[currentRoom] || [];
   const msg = msgs.find(m => m.id === msgId);
   const existing = (msg?.reactions || []).find(r => r.emoji === emoji && (r.user_ids || []).includes(currentUser?.id));
@@ -1501,6 +1537,7 @@ let _tempIdCounter = 0;
 function genTempId() { return 'tmp_' + (++_tempIdCounter) + '_' + Date.now(); }
 
 function sendChatMessage(type, content, replyToId) {
+  dbg('[CHAT] sendChatMessage', type);
   const tempId = genTempId();
   const now = new Date().toISOString();
 
@@ -1548,12 +1585,14 @@ function leaveRoom() {
 }
 
 function goBack() {
+  dbg('[NAV] goBack');
   if (currentRoom) leaveRoom();
   else history.back();
 }
 
 // --- Action menu ---
 function toggleActionMenu() {
+  dbg('[MENU] toggleActionMenu');
   const menu = document.getElementById('action-menu');
   menu?.classList.toggle('open');
   const isOpen = menu?.classList.contains('open');
@@ -1591,6 +1630,7 @@ function shareLocation() {
 }
 
 async function resizeImage(file, maxSide) {
+  dbg('[IMAGE] resizeImage', file.name);
   const bmp = await createImageBitmap(file);
   const longest = Math.max(bmp.width, bmp.height);
   if (longest <= maxSide * 1.1) { bmp.close(); return file; }
@@ -1606,6 +1646,7 @@ async function resizeImage(file, maxSide) {
 }
 
 function uploadImage() {
+  dbg('[IMAGE] uploadImage');
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
   input.onchange = async () => {
@@ -1902,11 +1943,13 @@ function uploadVideo() {
 }
 
 function openEmoji() { showToast('Emoji picker coming in v2'); }
+  dbg('[CHAT] openEmoji');
 
 // --- Meetup modal ---
 let _meetupCoords = null;
 
 function openMeetupModal() {
+  dbg('[MEETUP] openMeetupModal');
   document.getElementById('meetup-modal')?.remove();
   const d = new Date(Math.ceil((Date.now() + 900000) / 900000) * 900000);
   const defaultDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -1957,6 +2000,7 @@ function openMeetupModal() {
 }
 
 function useMeetupGPS() {
+  dbg('[MEETUP] useMeetupGPS');
   if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
   navigator.geolocation.getCurrentPosition(pos => {
     _meetupCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -1966,6 +2010,7 @@ function useMeetupGPS() {
 }
 
 function submitMeetup() {
+  dbg('[MEETUP] submitMeetup');
   const title = document.getElementById('meetup-title').value.trim();
   const dateVal = document.getElementById('meetup-date').value;
   const hour = document.getElementById('meetup-hour').value;
@@ -1987,6 +2032,7 @@ function submitMeetup() {
 }
 
 function showConfirm(title, detail, onConfirm, btnLabel) {
+  dbg('[DIALOG] showConfirm', title);
   document.getElementById('confirm-dialog')?.remove();
   const dismiss = () => { overlay.classList.remove('open'); setTimeout(() => overlay.remove(), 200); };
   const overlay = document.createElement('div');
@@ -2012,6 +2058,7 @@ function showConfirm(title, detail, onConfirm, btnLabel) {
 }
 
 function closeMeetupModal() {
+  dbg('[MEETUP] closeMeetupModal');
   const modal = document.getElementById('meetup-modal');
   if (modal) { modal.classList.remove('open'); setTimeout(() => { modal.remove(); verify('closeMeetupModal', !document.getElementById('meetup-modal'), 'modal removed from DOM'); }, 200); }
   _meetupCoords = null;
@@ -2019,6 +2066,7 @@ function closeMeetupModal() {
 
 // --- User menu (action sheet) ---
 function showUserMenu(userId, name) {
+  dbg('[MENU] showUserMenu', userId, name);
   if (userId === currentUser?.id) return;
   document.getElementById('action-sheet')?.remove();
   const sheet = document.createElement('div');
@@ -2041,11 +2089,13 @@ function showUserMenu(userId, name) {
 }
 
 function closeActionSheet() {
+  dbg('[MENU] closeActionSheet');
   const sheet = document.getElementById('action-sheet');
   if (sheet) { sheet.classList.remove('open'); setTimeout(() => sheet.remove(), 200); }
 }
 
 function blockUserConfirm(userId, name) {
+  dbg('[MENU] blockUserConfirm', userId, name);
   document.getElementById('action-sheet')?.remove();
   const sheet = document.createElement('div');
   sheet.id = 'action-sheet';
@@ -2062,6 +2112,7 @@ function blockUserConfirm(userId, name) {
 
 // --- Message context menu ---
 function showMsgMenu(msgId, isOwn) {
+  dbg('[MENU] showMsgMenu', msgId, isOwn);
   closeActionSheet();
   const msgs = messagesByRoom[currentRoom] || [];
   const m = msgs.find(msg => msg.id === msgId);
@@ -2086,6 +2137,7 @@ function showMsgMenu(msgId, isOwn) {
 }
 
 function msgMenuConfirmUnsend(msgId) {
+  dbg('[MENU] msgMenuConfirmUnsend', msgId);
   const inner = document.querySelector('#action-sheet .action-sheet');
   if (!inner) return;
   inner.innerHTML = '<div class="action-sheet-title">Delete this message?</div>'
@@ -2095,6 +2147,7 @@ function msgMenuConfirmUnsend(msgId) {
 
 // --- Settings menu ---
 function showSettingsMenu() {
+  dbg('[MENU] showSettingsMenu');
   closeActionSheet();
   const sheet = document.createElement('div');
   sheet.id = 'action-sheet';
@@ -2112,6 +2165,7 @@ function showSettingsMenu() {
 }
 
 function openProfileModal() {
+  dbg('[PROFILE] openProfileModal');
   document.getElementById('profile-modal')?.remove();
   const u = currentUser || {};
   const countryName = COUNTRIES.find(c => c[0] === u.country)?.[1] || '';
@@ -2165,6 +2219,7 @@ function openProfileModal() {
 let _editDisplaynameTimer = null;
 
 function onEditDisplayNameInput() {
+  dbg('[PROFILE] onEditDisplayNameInput');
   updateEditPreview();
   clearTimeout(_editDisplaynameTimer);
   const val = document.getElementById('edit-displayname').value.trim();
@@ -2195,6 +2250,7 @@ function onEditDisplayNameInput() {
 }
 
 function updateEditPreview() {
+  dbg('[PROFILE] updateEditPreview');
   const el = document.getElementById('edit-preview-bubble');
   if (!el) return;
   const u = currentUser || {};
@@ -2218,6 +2274,7 @@ function updateEditPreview() {
 }
 
 function closeProfileModal() {
+  dbg('[PROFILE] closeProfileModal');
   const el = document.getElementById('profile-modal');
   if (el) { el.classList.remove('open'); setTimeout(() => el.remove(), 200); }
 }
@@ -2226,6 +2283,7 @@ let _editAvatarUrl = '';
 let _editCountry = '';
 
 function openEditCountryPicker() {
+  dbg('[PROFILE] openEditCountryPicker');
   const picker = document.getElementById('edit-country-picker');
   if (picker.classList.contains('open')) return;
   picker.classList.add('open');
@@ -2250,6 +2308,7 @@ function _editCountryOutsideClick(e) {
 }
 
 function closeEditCountryPicker() {
+  dbg('[PROFILE] closeEditCountryPicker');
   const picker = document.getElementById('edit-country-picker');
   if (!picker) return;
   picker.classList.remove('open');
@@ -2279,6 +2338,7 @@ function renderEditCountryList(query, hlIdx) {
 }
 
 function selectEditCountry(code) {
+  dbg('[PROFILE] selectEditCountry', code);
   _editCountry = code;
   closeEditCountryPicker();
   const inp = document.getElementById('edit-country-input');
@@ -2290,6 +2350,7 @@ function selectEditCountry(code) {
 let _editAvatarState = null;
 
 function editProfileAvatar() {
+  dbg('[AVATAR] editProfileAvatar');
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
   input.onchange = async () => {
@@ -2304,6 +2365,7 @@ function editProfileAvatar() {
 }
 
 async function initEditAvatarEditor(file) {
+  dbg('[AVATAR] initEditAvatarEditor', file.name);
   const bmp = await createImageBitmap(file);
   const origW = bmp.width, origH = bmp.height;
   bmp.close();
@@ -2377,6 +2439,7 @@ function editClampY(y) { const s = _editAvatarState; return Math.min(0, Math.max
 
 let _editAvatarPreviewTimer = null;
 function updateEditAvatarView() {
+  dbg('[AVATAR] updateEditAvatarView');
   const img = document.getElementById('edit-avatar-img');
   if (!img || !_editAvatarState) return;
   const s = _editAvatarState;
@@ -2388,6 +2451,7 @@ function updateEditAvatarView() {
 }
 
 async function updateEditAvatarPreview() {
+  dbg('[AVATAR] updateEditAvatarPreview');
   const s = _editAvatarState;
   if (!s) return;
   const cropX = -s.x / s.scale;
@@ -2405,6 +2469,7 @@ async function updateEditAvatarPreview() {
 }
 
 async function saveProfile() {
+  dbg('[PROFILE] saveProfile');
   const displayName = document.getElementById('edit-displayname').value.trim();
   const country = _editCountry;
   try {
@@ -2436,15 +2501,18 @@ async function saveProfile() {
     });
     if (body.display_name !== undefined) currentUser.display_name = displayName;
     if (body.country) currentUser.country = country;
-    if (body.avatar_url) currentUser.avatar_url = body.avatar_url;
+    if (body.avatar_url) currentUser.avatar_url = body.avatar_url + '?t=' + Date.now();
     _editAvatarState = null;
     _editAvatarUrl = '';
     closeProfileModal();
+    const headerAvEl = document.querySelector('.header-avatar');
+    if (headerAvEl && currentUser.avatar_url) headerAvEl.innerHTML = `<img src="${currentUser.avatar_url}">`;
     showToast('Profile updated');
   } catch (e) { showToast(e.message); }
 }
 
 function openNotificationsModal() {
+  dbg('[NOTIFY] openNotificationsModal');
   const enabled = Notification.permission === 'granted';
   document.getElementById('notifications-modal')?.remove();
   const overlay = document.createElement('div');
@@ -2470,11 +2538,13 @@ function openNotificationsModal() {
 }
 
 function closeNotificationsModal() {
+  dbg('[NOTIFY] closeNotificationsModal');
   const el = document.getElementById('notifications-modal');
   if (el) { el.classList.remove('open'); setTimeout(() => el.remove(), 200); }
 }
 
 async function enableNotifications() {
+  dbg('[NOTIFY] enableNotifications');
   const perm = await Notification.requestPermission();
   if (perm === 'granted') {
     showToast('Notifications enabled');
@@ -2485,11 +2555,13 @@ async function enableNotifications() {
 }
 
 function disableNotifications() {
+  dbg('[NOTIFY] disableNotifications');
   showToast('Disable notifications in browser settings');
   closeNotificationsModal();
 }
 
 function confirmLogout() {
+  dbg('[AUTH] confirmLogout');
   closeActionSheet();
   const sheet = document.createElement('div');
   sheet.id = 'action-sheet';
@@ -2505,6 +2577,7 @@ function confirmLogout() {
 }
 
 async function doLogout() {
+  dbg('[AUTH] doLogout');
   try {
     await api('/auth/logout', { method: 'POST' });
   } catch {}
@@ -2516,6 +2589,7 @@ async function doLogout() {
 
 // --- Image viewer ---
 function toggleVideo(wrap) {
+  dbg('[VIDEO] toggleVideo');
   const vid = wrap.querySelector('video');
   if (vid.paused) { vid.play(); wrap.classList.add('playing'); }
   else { vid.pause(); wrap.classList.remove('playing'); }
@@ -2524,6 +2598,7 @@ function toggleVideo(wrap) {
 let _expandedFromWrap = null;
 
 function expandVideo(wrap, url) {
+  dbg('[VIDEO] expandVideo', url);
   const vid = wrap.querySelector('video');
   const t = vid.currentTime;
   vid.pause();
@@ -2533,6 +2608,7 @@ function expandVideo(wrap, url) {
 }
 
 function closeViewer() {
+  dbg('[VIEWER] closeViewer');
   const overlay = document.getElementById('image-viewer');
   if (!overlay) return;
   const viewerVid = overlay.querySelector('video');
@@ -2547,6 +2623,7 @@ function closeViewer() {
 }
 
 function openImageViewer(url) {
+  dbg('[VIEWER] openImageViewer', url);
   document.getElementById('image-viewer')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'image-viewer';
@@ -2558,6 +2635,7 @@ function openImageViewer(url) {
 }
 
 function openVideoViewer(url, startTime) {
+  dbg('[VIEWER] openVideoViewer', url);
   document.getElementById('image-viewer')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'image-viewer';
