@@ -640,9 +640,13 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
     if len(data) > 500 * 1024:
         raise HTTPException(400, "Max file size is 500KB")
 
+    import time
+
+    version = str(int(time.time()))
+    avatar_url = f"/chat/api/avatar/{user['id']}?v={version}"
     db.execute(
         "UPDATE users SET avatar_url = ? WHERE id = ?",
-        (f"/chat/api/avatar/{user['id']}", user["id"]),
+        (avatar_url, user["id"]),
     )
     db.execute(
         "CREATE TABLE IF NOT EXISTS avatars (user_id TEXT PRIMARY KEY, data BLOB NOT NULL)"
@@ -653,7 +657,7 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
     )
     db.commit()
 
-    return {"url": f"/chat/api/avatar/{user['id']}"}
+    return {"url": avatar_url}
 
 
 @router.get("/avatar/{user_id}")

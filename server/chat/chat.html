@@ -2504,7 +2504,7 @@ async function saveProfile() {
     });
     if (body.display_name !== undefined) currentUser.display_name = displayName;
     if (body.country) currentUser.country = country;
-    if (body.avatar_url) currentUser.avatar_url = body.avatar_url + '?t=' + Date.now();
+    if (body.avatar_url) currentUser.avatar_url = body.avatar_url;
     _editAvatarState = null;
     _editAvatarUrl = '';
     closeProfileModal();
