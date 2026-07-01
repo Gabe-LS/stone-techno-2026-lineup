@@ -83,7 +83,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .header .header-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .header .header-info .title { font-size: var(--font-sm); line-height: 1.2; }
 .header .header-info .online { display: block; line-height: 1.2; }
-.header .header-avatar { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.2); }
+.header .header-avatar { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.3); }
 .header .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .icon-user { vertical-align: -3px; }
 .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-anchor: none; scrollbar-width: none; }
@@ -2117,26 +2117,36 @@ function openProfileModal() {
   const countryName = COUNTRIES.find(c => c[0] === u.country)?.[1] || '';
   const countryDisplay = u.country ? FLAG(u.country) + ' ' + countryName : '';
   _editCountry = u.country || '';
+  _editAvatarUrl = '';
+  const color = USER_COLORS[u.color_index || 0];
+  const shown = u.display_name || u.username || 'username';
   const overlay = document.createElement('div');
   overlay.id = 'profile-modal';
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
+  overlay.innerHTML = `<div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
     <div class="modal-header">
       <span class="modal-title">Edit Profile</span>
       <button class="modal-close" onclick="closeProfileModal()">&times;</button>
     </div>
-    <div class="modal-body" style="align-items:center">
+    <div class="modal-body" style="align-items:center;gap:var(--space-md)">
       <div class="avatar-upload" id="edit-avatar" onclick="editProfileAvatar()" style="width:80px;height:80px">
         ${u.avatar_url ? '<img src="' + u.avatar_url + '">' : '<svg viewBox="0 0 24 24" fill="none" style="width:24px;height:24px;color:var(--color-disabled)"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>'}
       </div>
-      <label class="modal-label">Display name</label>
-      <input class="modal-input" id="edit-displayname" value="${escapeHtml(u.display_name || '')}" maxlength="30" placeholder="Display name (optional)" autocomplete="off" style="text-align:center">
-      <label class="modal-label">Country</label>
+      <div class="profile-field" style="width:100%">
+        <input id="edit-displayname" value="${escapeHtml(u.display_name || '')}" maxlength="30" placeholder="Display name (optional)" autocomplete="off" autocorrect="off" spellcheck="false" oninput="onEditDisplayNameInput()">
+        <span class="field-status" id="edit-displayname-status"></span>
+        <div class="field-hint" id="edit-displayname-hint">Shown in chat instead of username</div>
+      </div>
       <div class="country-picker" id="edit-country-picker" style="width:100%">
-        <input id="edit-country-input" placeholder="Country" value="${escapeHtml(countryDisplay)}" onfocus="openEditCountryPicker()" autocomplete="off" class="modal-input" style="text-align:center">
+        <input id="edit-country-input" placeholder="Country" value="${escapeHtml(countryDisplay)}" onfocus="openEditCountryPicker()" autocomplete="off" style="text-align:center">
+        <span class="field-status" id="edit-country-status">${u.country ? 'ok' : ''}</span>
         <div class="country-list" id="edit-country-list"></div>
       </div>
-      <div style="font-size:var(--font-xs);color:var(--color-muted);margin-top:var(--space-xs)">Changes allowed once every 24 hours</div>
+      <div class="profile-preview" style="width:100%">
+        <div class="profile-preview-label">How others see your messages</div>
+        <div id="edit-preview-bubble"></div>
+      </div>
+      <div style="font-size:var(--font-xs);color:var(--color-muted)">Changes allowed once every 24 hours</div>
     </div>
     <div class="modal-footer">
       <button class="modal-btn-primary" onclick="saveProfile()">Save</button>
@@ -2145,6 +2155,37 @@ function openProfileModal() {
   overlay.addEventListener('click', closeProfileModal);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
+  updateEditPreview();
+  if (u.country) document.getElementById('edit-country-input')?.classList.add('valid');
+  const editCountryStatus = document.getElementById('edit-country-status');
+  if (editCountryStatus && u.country) editCountryStatus.className = 'field-status ok';
+}
+
+function onEditDisplayNameInput() {
+  updateEditPreview();
+}
+
+function updateEditPreview() {
+  const el = document.getElementById('edit-preview-bubble');
+  if (!el) return;
+  const u = currentUser || {};
+  const displayName = document.getElementById('edit-displayname')?.value || '';
+  const shown = displayName || u.username || 'username';
+  const color = USER_COLORS[u.color_index || 0];
+  const avatarSrc = _editAvatarUrl || u.avatar_url || '';
+  const avatarEl = avatarSrc
+    ? `<div class="avatar-sm"><img src="${avatarSrc}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`
+    : `<div class="avatar-sm" style="background:${color.vivid}">${(shown[0] || '?').toUpperCase()}</div>`;
+  el.innerHTML = `<div style="display:flex;gap:var(--space-sm);align-items:flex-end">
+    ${avatarEl}
+    <div class="msg-bubble msg-other-bubble" style="background:${color.pastel};padding:var(--space-sm) var(--space-md) var(--space-lg);border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm);max-width:240px">
+      <div class="msg-header" style="margin-bottom:2px">
+        <span class="msg-name" style="color:${color.vivid}">${escapeHtml(shown)}</span>
+      </div>
+      <div class="msg-text">Hey, see you at the main stage!</div>
+      <span class="msg-time" style="position:static;float:right;margin-top:var(--space-xs)">now</span>
+    </div>
+  </div>`;
 }
 
 function closeProfileModal() {
@@ -2211,6 +2252,10 @@ function renderEditCountryList(query, hlIdx) {
 function selectEditCountry(code) {
   _editCountry = code;
   closeEditCountryPicker();
+  const inp = document.getElementById('edit-country-input');
+  if (inp) inp.classList.toggle('valid', !!code);
+  const status = document.getElementById('edit-country-status');
+  if (status) { status.textContent = code ? 'ok' : ''; status.className = 'field-status' + (code ? ' ok' : ''); }
 }
 
 function editProfileAvatar() {
@@ -2238,6 +2283,7 @@ function editProfileAvatar() {
       _editAvatarUrl = result.url;
       const el = document.getElementById('edit-avatar');
       if (el) el.innerHTML = '<img src="' + result.url + '">';
+      updateEditPreview();
     } catch (e) { showToast(e.message || 'Upload failed'); }
   };
   input.click();
