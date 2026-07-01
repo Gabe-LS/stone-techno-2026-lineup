@@ -310,11 +310,11 @@ def _validate_username(
     username: str, db, exclude_user_id: str | None = None
 ) -> str | None:
     if not username or len(username) < 2 or len(username) > 20:
-        return "Username must be 2-20 characters"
+        return "2-20 characters"
     if not _USERNAME_RE.match(username):
-        return "Only letters, numbers, periods, underscores, hyphens"
+        return "Allowed: a-z 0-9 . _ -"
     if _USERNAME_BAD_RE.search(username):
-        return "No consecutive special characters"
+        return "No consecutive . _ -"
     lower = username.lower()
     query = "SELECT id FROM users WHERE username_lower = ?"
     params = [lower]
@@ -328,15 +328,15 @@ def _validate_username(
 
 def _validate_display_name(name: str) -> str | None:
     if not name or len(name) < 2 or len(name) > 30:
-        return "Display name must be 2-30 characters"
+        return "2-30 characters"
     normalized = unicodedata.normalize("NFKC", name)
     try:
         if not _DISPLAYNAME_RE.match(normalized):
-            return "Only letters, numbers, spaces, periods, underscores, hyphens"
+            return "Allowed: a-z 0-9 spaces . _ -"
     except Exception:
         return "Invalid characters"
     if "  " in normalized:
-        return "No consecutive spaces"
+        return "No double spaces"
     return None
 
 

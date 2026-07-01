@@ -255,10 +255,10 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .profile-field input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; transition: border-color 0.15s; }
 .profile-field input:focus { border-color: var(--gray-400); }
 .profile-field input.valid, .profile-field input.valid:focus { border-color: var(--color-success); }
-.profile-field .field-status { position: absolute; right: var(--space-md); top: 50%; transform: translateY(-50%); font-size: var(--font-xs); }
+.profile-field .field-status { position: absolute; right: var(--space-md); top: 0; height: 46px; display: flex; align-items: center; font-size: var(--font-xs); }
 .profile-field .field-status.ok { color: var(--color-success); }
 .profile-field .field-status.err { color: var(--color-accent); }
-.profile-field .field-hint { font-size: var(--font-xs); color: var(--color-muted); text-align: center; margin-top: var(--space-xs); }
+.profile-field .field-hint { font-size: var(--font-xs); color: var(--color-muted); text-align: center; margin-top: var(--space-xs); min-height: 1.3em; text-wrap: balance; }
 .profile-field .field-hint.err { color: var(--color-accent); }
 .profile-preview { width: 320px; background: var(--gray-50); border-radius: var(--radius-md); padding: var(--space-lg); }
 .profile-preview-label { font-size: var(--font-xs); color: var(--color-muted); margin-bottom: var(--space-sm); text-align: center; }
@@ -266,6 +266,8 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .country-picker input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); outline: none; font-family: inherit; text-align: center; transition: border-color 0.15s; }
 .country-picker input:focus { border-color: var(--gray-400); }
 .country-picker input.valid, .country-picker input.valid:focus { border-color: var(--color-success); }
+.country-picker > .field-status { position: absolute; right: var(--space-md); top: 0; height: 46px; display: flex; align-items: center; font-size: var(--font-xs); z-index: 1; }
+.country-picker .field-status.ok { color: var(--color-success); }
 .country-list { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); z-index: 50; display: none; scrollbar-width: none; }
 .country-list::-webkit-scrollbar { display: none; }
 .country-picker.open .country-list { display: block; }
@@ -493,17 +495,18 @@ function renderProfilePrompt() {
       </div>
       <div class="avatar-zoom" id="avatar-zoom"><span>-</span><div class="avatar-zoom-track" id="avatar-zoom-track"><div class="avatar-zoom-thumb hidden" id="avatar-zoom-thumb"></div></div><span>+</span></div>
       <div class="profile-field">
-        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()">
+        <input id="username-input" placeholder="Username" maxlength="20" value="${currentUser?.username || ''}" oninput="onUsernameInput()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <span class="field-status" id="username-status"></span>
-        <div class="field-hint" id="username-hint">Letters, numbers, periods, underscores, hyphens</div>
+        <div class="field-hint" id="username-hint">Allowed: a-z 0-9 . _ -</div>
       </div>
       <div class="profile-field">
-        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()">
+        <input id="displayname-input" placeholder="Display name (optional)" maxlength="30" value="${currentUser?.display_name || ''}" oninput="onDisplayNameInput()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <span class="field-status" id="displayname-status"></span>
         <div class="field-hint" id="displayname-hint">Shown in chat instead of username</div>
       </div>
       <div class="country-picker" id="country-picker">
-        <input id="country-input" placeholder="Country" value="${countryDisplay}" onfocus="openCountryPicker()">
+        <input id="country-input" placeholder="Country" value="${countryDisplay}" onfocus="openCountryPicker()" autocomplete="off">
+        <span class="field-status" id="country-status"></span>
         <div class="country-list" id="country-list"></div>
       </div>
       <div class="profile-preview" id="profile-preview">
@@ -525,7 +528,7 @@ function onUsernameInput() {
   const val = document.getElementById('username-input').value;
   if (!val || val.length < 2) {
     status.textContent = '';
-    hint.textContent = 'Letters, numbers, periods, underscores, hyphens';
+    hint.textContent = 'Allowed: a-z 0-9 . _ -';
     hint.className = 'field-hint';
     updateProfilePreview();
     return;
@@ -668,6 +671,8 @@ function selectCountry(code) {
   closeCountryPicker();
   const inp = document.getElementById('country-input');
   if (inp) inp.classList.toggle('valid', !!code);
+  const status = document.getElementById('country-status');
+  if (status) { status.textContent = code ? 'ok' : ''; status.className = 'field-status' + (code ? ' ok' : ''); }
 }
 
 let _avatarState = null;
