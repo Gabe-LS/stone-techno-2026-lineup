@@ -693,25 +693,16 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     token = secrets.token_hex(16)
     filename = f"{token}.webp"
     out_path = upload_dir / filename
+    out_path.write_bytes(data)
 
     try:
         import pyvips
 
         img = pyvips.Image.new_from_buffer(data, "")
-        img = img.autorot()
-        if img.hasalpha():
-            img = img.flatten(background=[255, 255, 255])
-        if img.get_typeof("exif-data"):
-            img = img.remove("exif-data", "all")
-        max_side = max(img.width, img.height)
-        if max_side > 1500:
-            scale = 1500 / max_side
-            display = img.resize(scale, kernel=pyvips.enums.Kernel.LANCZOS3)
-        else:
-            display = img
-        display.webpsave(str(out_path), Q=75)
+        width, height = img.width, img.height
 
         mod_path = upload_dir / f"{token}_mod.webp"
+        max_side = max(width, height)
         if max_side > 880:
             mod_scale = 800 / max_side
             mod = img.resize(mod_scale, kernel=pyvips.enums.Kernel.LANCZOS3)
@@ -719,12 +710,13 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         else:
             img.webpsave(str(mod_path), Q=60)
     except Exception as e:
+        out_path.unlink(missing_ok=True)
         raise HTTPException(500, f"Image processing failed: {e}")
 
     return {
         "url": f"/chat/uploads/{filename}",
-        "width": display.width,
-        "height": display.height,
+        "width": width,
+        "height": height,
     }
 
 
