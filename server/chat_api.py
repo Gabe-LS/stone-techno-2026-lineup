@@ -316,12 +316,6 @@ def _validate_username(
     if _USERNAME_BAD_RE.search(username):
         return "No consecutive special characters"
     lower = username.lower()
-    from chat_moderation import get_word_filter
-
-    wf = get_word_filter()
-    match = wf.check_username(lower)
-    if match:
-        return "Username not allowed"
     query = "SELECT id FROM users WHERE username_lower = ?"
     params = [lower]
     if exclude_user_id:
@@ -343,12 +337,6 @@ def _validate_display_name(name: str) -> str | None:
         return "Invalid characters"
     if "  " in normalized:
         return "No consecutive spaces"
-    from chat_moderation import get_word_filter
-
-    wf = get_word_filter()
-    match = wf.check(normalized.lower())
-    if match:
-        return "Display name not allowed"
     return None
 
 
