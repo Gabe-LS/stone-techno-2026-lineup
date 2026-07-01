@@ -119,17 +119,27 @@ class WordFilter:
             for i in range(len(words) - len(term_words) + 1):
                 if words[i : i + len(term_words)] == term_words:
                     return {"matched": term, "is_drug": True}
-            if term in normalized:
-                return {"matched": term, "is_drug": True}
 
         for term in self._terms - self._drug_terms:
             term_words = term.split()
             for i in range(len(words) - len(term_words) + 1):
                 if words[i : i + len(term_words)] == term_words:
                     return {"matched": term, "is_drug": False}
-            if term in normalized:
-                return {"matched": term, "is_drug": False}
 
+        return None
+
+    def check_username(self, username: str) -> dict | None:
+        normalized = _normalize(username)
+        parts = re.split(r"[._\-]+", normalized)
+        for part in parts:
+            if not part:
+                continue
+            result = self.check(part)
+            if result:
+                return result
+            for term in self._terms:
+                if len(term) >= 5 and term in part and part != term:
+                    return {"matched": term, "is_drug": term in self._drug_terms}
         return None
 
     @property

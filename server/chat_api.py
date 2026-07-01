@@ -319,7 +319,7 @@ def _validate_username(
     from chat_moderation import get_word_filter
 
     wf = get_word_filter()
-    match = wf.check(lower)
+    match = wf.check_username(lower)
     if match:
         return "Username not allowed"
     query = "SELECT id FROM users WHERE username_lower = ?"
