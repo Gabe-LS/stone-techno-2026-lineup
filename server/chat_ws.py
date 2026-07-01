@@ -718,6 +718,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         "count": v["count"],
                         "type": v["type"],
                         "name": v["name"],
+                        "last_read_at": v.get("last_read_at", ""),
                     }
                     for rid, v in counts.items()
                 ],
@@ -776,8 +777,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
             elif event == "mark_read":
                 room_id = data.get("room_id")
+                timestamp = data.get("timestamp")
                 if room_id:
-                    mark_room_read(db, user_id, room_id)
+                    mark_room_read(db, user_id, room_id, timestamp)
                     if user_id in manager.user_unread:
                         manager.user_unread[user_id].pop(room_id, None)
 

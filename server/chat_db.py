@@ -406,13 +406,16 @@ def leave_room_membership(db: sqlite3.Connection, user_id: str, room_id: str) ->
     db.commit()
 
 
-def mark_room_read(db: sqlite3.Connection, user_id: str, room_id: str) -> None:
-    now = _now()
+def mark_room_read(
+    db: sqlite3.Connection, user_id: str, room_id: str, timestamp: str | None = None
+) -> None:
+    ts = timestamp or _now()
     db.execute(
         "INSERT INTO room_memberships (user_id, room_id, joined_at, last_read_at) "
         "VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(user_id, room_id) DO UPDATE SET last_read_at = excluded.last_read_at",
-        (user_id, room_id, now, now),
+        "ON CONFLICT(user_id, room_id) DO UPDATE SET last_read_at = "
+        "MAX(room_memberships.last_read_at, excluded.last_read_at)",
+        (user_id, room_id, ts, ts),
     )
     db.commit()
 
@@ -427,7 +430,7 @@ def get_user_memberships(db: sqlite3.Connection, user_id: str) -> list[sqlite3.R
 def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
     now = _now()
     rows = db.execute(
-        "SELECT src.room_id, r.type, r.name, "
+        "SELECT src.room_id, r.type, r.name, src.last_read_at, "
         "COUNT(m.id) AS unread "
         "FROM ("
         "  SELECT room_id, last_read_at FROM room_memberships WHERE user_id = ? "
@@ -446,7 +449,12 @@ def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
         (user_id, user_id, now, user_id),
     ).fetchall()
     return {
-        r["room_id"]: {"count": r["unread"], "type": r["type"], "name": r["name"]}
+        r["room_id"]: {
+            "count": r["unread"],
+            "type": r["type"],
+            "name": r["name"],
+            "last_read_at": r["last_read_at"],
+        }
         for r in rows
         if r["unread"] > 0
     }

@@ -354,6 +354,7 @@ let messagesByRoom = {};
 let typingUsers = {};
 let onlineByRoom = {};
 let unreadByRoom = {};
+let _lastReadByRoom = {};
 let roomTypeLookup = {};
 const USER_ICON = '<svg class="icon-user" width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M20 17.5C20 19.9853 20 22 12 22C4 22 4 19.9853 4 17.5C4 15.0147 7.58172 13 12 13C16.4183 13 20 15.0147 20 17.5Z" stroke="currentColor" stroke-width="1.5"/></svg>';
 let replyTo = null;
@@ -937,14 +938,35 @@ function handleWSEvent(data) {
         onlineByRoom[data.room_id].push({ user_id: currentUser.id });
       verify('room_history', data.messages, data.messages.length + ' messages for ' + data.room_id);
       dbg('[CHAT] room_history received, room=' + data.room_id + ' currentRoom=' + currentRoom + ' msgs=' + data.messages.length);
-      if (currentRoom === data.room_id) { renderMessages(); scrollToBottom(); updateHeaderCount(); }
+      if (currentRoom === data.room_id) {
+        renderMessages();
+        _setupReadObserver();
+        const unreadCount = unreadByRoom[data.room_id] || 0;
+        if (unreadCount > 0 && data.messages.length > 0) {
+          const otherMsgs = data.messages.filter(m => m.user_id !== currentUser?.id);
+          const firstUnreadIdx = Math.max(0, otherMsgs.length - unreadCount);
+          const firstUnread = otherMsgs[firstUnreadIdx];
+          if (firstUnread) {
+            dbg('[SCROLL] scrolling to first unread', firstUnread.id, 'unread=' + unreadCount);
+            const target = document.querySelector(`[data-msg-id="${firstUnread.id}"]`);
+            if (target) target.scrollIntoView({ block: 'start' });
+            else scrollToBottom();
+          } else { scrollToBottom(); }
+        } else { scrollToBottom(); }
+        updateHeaderCount();
+      }
       if (window._roomHistoryResolve) { window._roomHistoryResolve(); window._roomHistoryResolve = null; }
       updateSidebarCount(data.room_id);
       break;
     case 'message':
       if (!messagesByRoom[data.room_id]) messagesByRoom[data.room_id] = [];
       messagesByRoom[data.room_id].push(data);
-      if (currentRoom === data.room_id) { appendMessage(data); scrollToBottom(); }
+      if (currentRoom === data.room_id) {
+        const scrollEl = document.getElementById('msg-scroll');
+        const wasAtBottom = scrollEl && (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 50);
+        appendMessage(data);
+        if (wasAtBottom) scrollToBottom();
+      }
       if (document.hidden && data.user_id !== currentUser?.id) {
         _hiddenUnread = (_hiddenUnread || 0) + 1;
         _updateTitleBadge();
@@ -1052,8 +1074,9 @@ function handleWSEvent(data) {
     }
     case 'badge_counts':
       dbg('[BADGE] initial counts:', data.counts.length);
-      data.counts.forEach(({room_id, count, type, name}) => {
+      data.counts.forEach(({room_id, count, type, name, last_read_at}) => {
         if (count > 0) unreadByRoom[room_id] = count;
+        if (last_read_at) _lastReadByRoom[room_id] = last_read_at;
         roomTypeLookup[room_id] = {type, name};
       });
       refreshAllBadges();
@@ -1319,12 +1342,8 @@ async function openRoom(roomId, roomName, roomType) {
   else if (currentRoomType === 'meetup') history.replaceState(null, '', '/chat/m/' + roomId);
   else if (rooms.length > 1) history.replaceState(null, '', '/chat/r/' + roomId);
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
-  delete unreadByRoom[roomId];
-  updateBadge(roomId);
-  updateTabBadges();
   if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });
-    wsSend('mark_read', { room_id: roomId });
   } else {
     try {
       const msgs = await api('/rooms/' + roomId + '/messages');
@@ -1335,7 +1354,6 @@ async function openRoom(roomId, roomName, roomType) {
     await connectWS();
     if (ws && ws.readyState === 1) {
       wsSend('join_room', { room_id: roomId });
-      wsSend('mark_read', { room_id: roomId });
     }
   }
   await historyReady;
@@ -1416,7 +1434,6 @@ function renderChatView(roomName) {
 
   renderMessages();
   dbg('[CHAT] renderChatView done, msgs=' + (messagesByRoom[currentRoom] || []).length);
-  if ((messagesByRoom[currentRoom] || []).length) scrollToBottom();
 
   verify('renderChatView', document.getElementById('msg-input'), 'input rendered');
   verify('renderChatView', document.getElementById('messages'), 'messages container rendered');
@@ -1452,8 +1469,10 @@ function appendMessage(m) {
   const el = document.getElementById('messages');
   if (!el) return;
   el.insertAdjacentHTML('beforeend', renderMessage(m));
+  const newEl = el.querySelector(`[data-msg-id="${m.id}"]`);
+  _observeNewMessage(newEl);
   if (m.type === 'image') {
-    const img = el.querySelector(`[data-msg-id="${m.id}"] .msg-image`);
+    const img = newEl?.querySelector('.msg-image');
     if (img) img.onload = () => scrollToBottom();
   }
 }
@@ -1524,14 +1543,14 @@ function renderMessage(m) {
   }
 
   const reactionsHtml = renderReactionPills(m.id, m.reactions);
-  const reactBtn = `<button class="react-btn" onmouseenter="reactHoverIn('${m.id}',this)" onmouseleave="reactHoverOut()" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M9 16C9.85038 16.6303 10.8846 17 12 17C13.1154 17 14.1496 16.6303 15 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10.5C16 11.3284 15.5523 12 15 12C14.4477 12 14 11.3284 14 10.5C14 9.67157 14.4477 9 15 9C15.5523 9 16 9.67157 16 10.5Z" fill="currentColor"/><ellipse cx="9" cy="10.5" rx="1" ry="1.5" fill="currentColor"/></svg></button>`;
+  const reactBtn = `<button class="react-btn" onmouseenter="reactHoverIn(this.closest('.msg').dataset.msgId,this)" onmouseleave="reactHoverOut()" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M9 16C9.85038 16.6303 10.8846 17 12 17C13.1154 17 14.1496 16.6303 15 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10.5C16 11.3284 15.5523 12 15 12C14.4477 12 14 11.3284 14 10.5C14 9.67157 14.4477 9 15 9C15.5523 9 16 9.67157 16 10.5Z" fill="currentColor"/><ellipse cx="9" cy="10.5" rx="1" ry="1.5" fill="currentColor"/></svg></button>`;
 
   const time = `<span class="msg-time">${fmtTime(m.created_at)}</span>`;
 
   const color = msgColor(m);
 
   if (isMe) {
-    return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
+    return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" data-created-at="${m.created_at || ''}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
       <div class="msg-bubble msg-mine-bubble" style="background:${color.pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),true)">
         ${reactBtn}
         ${replyHtml}${contentHtml}
@@ -1540,7 +1559,7 @@ function renderMessage(m) {
     </div>`;
   }
 
-  return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
+  return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" data-created-at="${m.created_at || ''}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
     ${avatarHtml(name, m.color_index, true, m.avatar_url)}
     <div class="msg-bubble msg-other-bubble" style="background:${color.pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
       ${reactBtn}
@@ -1587,6 +1606,64 @@ function scrollToBottom() {
   observer.observe(document.getElementById('messages'));
   _scrollLock = observer;
   setTimeout(() => { observer.disconnect(); _scrollLock = null; }, 1500);
+}
+
+let _readObserver = null;
+let _lastSeenTime = null;
+let _markReadTimer = null;
+let _markReadRoom = null;
+
+function _setupReadObserver() {
+  if (_readObserver) _readObserver.disconnect();
+  _lastSeenTime = null;
+  _markReadRoom = currentRoom;
+  const scrollEl = document.getElementById('msg-scroll');
+  if (!scrollEl) return;
+  _readObserver = new IntersectionObserver((entries) => {
+    if (document.hidden) return;
+    let changed = false;
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const t = entry.target.dataset.createdAt;
+      if (t && (!_lastSeenTime || t > _lastSeenTime)) {
+        const msgId = entry.target.dataset.msgId;
+        const text = entry.target.querySelector('.msg-text')?.textContent?.slice(0, 40) || '';
+        dbg('[READ] seen', msgId, text);
+        _lastSeenTime = t;
+        changed = true;
+      }
+    }
+    if (changed) _debouncedMarkRead();
+  }, { root: scrollEl, threshold: 0.8 });
+  document.querySelectorAll('#messages .msg[data-created-at]').forEach(el => _readObserver.observe(el));
+}
+
+function _observeNewMessage(el) {
+  if (_readObserver && el && el.dataset.createdAt) _readObserver.observe(el);
+}
+
+function _debouncedMarkRead() {
+  if (_markReadTimer) clearTimeout(_markReadTimer);
+  _markReadTimer = setTimeout(() => {
+    _markReadTimer = null;
+    if (!_lastSeenTime || !_markReadRoom || !ws || ws.readyState !== 1) return;
+    const msgs = messagesByRoom[_markReadRoom] || [];
+    const unseenCount = msgs.filter(m => m.created_at > _lastSeenTime && m.user_id !== currentUser?.id).length;
+    dbg('[READ] mark_read', _markReadRoom, 'unread:', unseenCount, 'was:', unreadByRoom[_markReadRoom] || 0);
+    wsSend('mark_read', { room_id: _markReadRoom, timestamp: _lastSeenTime });
+    if (unseenCount === 0) delete unreadByRoom[_markReadRoom];
+    else unreadByRoom[_markReadRoom] = unseenCount;
+    updateBadge(_markReadRoom);
+    updateTabBadges();
+    _updateTitleBadge();
+  }, 500);
+}
+
+function _flushMarkRead() {
+  if (_markReadTimer) { clearTimeout(_markReadTimer); _markReadTimer = null; }
+  if (_lastSeenTime && _markReadRoom && ws && ws.readyState === 1) {
+    wsSend('mark_read', { room_id: _markReadRoom, timestamp: _lastSeenTime });
+  }
 }
 
 function updateTypingIndicator() {
@@ -3118,13 +3195,17 @@ window.addEventListener('resize', () => { isMobile = window.innerWidth < 768; })
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && _hiddenUnread > 0) {
-    dbg('[NOTIFY] tab visible, clearing', _hiddenUnread, 'hidden unread');
-    _hiddenUnread = 0;
-    _nw = null;
-    if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
-    _updateTitleBadge();
-    if (currentRoom && ws && ws.readyState === 1) wsSend('mark_read', { room_id: currentRoom });
+  if (!document.hidden) {
+    if (_hiddenUnread > 0) {
+      dbg('[NOTIFY] tab visible, clearing', _hiddenUnread, 'hidden unread');
+      _hiddenUnread = 0;
+      _nw = null;
+      if (_nwTimer) { clearTimeout(_nwTimer); _nwTimer = null; }
+      _updateTitleBadge();
+    }
+    _setupReadObserver();
+  } else {
+    _flushMarkRead();
   }
 });
 route();
