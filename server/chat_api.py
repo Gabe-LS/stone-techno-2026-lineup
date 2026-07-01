@@ -36,7 +36,7 @@ from chat_db import (
     get_room,
     get_rooms_by_event,
     get_room_messages,
-    seed_stage_rooms,
+    seed_event_room,
     create_meetup,
     join_meetup as db_join_meetup,
     leave_meetup as db_leave_meetup,
@@ -104,6 +104,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
         secure=is_prod,
         samesite="lax" if not is_prod else "strict",
         max_age=7 * 24 * 3600,
+        path="/",
     )
 
 
@@ -212,12 +213,13 @@ async def auth_email_start(request: Request):
     if ban:
         raise HTTPException(403, f"You have been banned: {ban['reason']}")
 
-    _email_tokens[token] = {
-        "email": email,
-        "provider_id": provider_id,
-        "fingerprint": fingerprint,
-        "expires": datetime.now(timezone.utc) + timedelta(minutes=15),
-    }
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    db.execute(
+        "INSERT OR REPLACE INTO email_tokens (token, email, provider_id, fingerprint, expires_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (token, email, provider_id, fingerprint, expires),
+    )
+    db.commit()
 
     maileroo_key = os.environ.get("MAILEROO_API_KEY")
     if maileroo_key:
@@ -248,18 +250,20 @@ async def auth_email_start(request: Request):
     return {"sent": True}
 
 
-_email_tokens: dict[str, dict] = {}
-
-
 @router.get("/auth/email/verify")
 async def auth_email_verify(request: Request, token: str = ""):
-    data = _email_tokens.pop(token, None)
-    if not data:
+    db = _get_db()
+    row = db.execute(
+        "SELECT email, provider_id, fingerprint, expires_at FROM email_tokens WHERE token = ?",
+        (token,),
+    ).fetchone()
+    if not row:
         raise HTTPException(400, "Invalid or expired link")
-    if datetime.now(timezone.utc) > data["expires"]:
+    db.execute("DELETE FROM email_tokens WHERE token = ?", (token,))
+    db.commit()
+    if datetime.now(timezone.utc) > datetime.fromisoformat(row["expires_at"]):
         raise HTTPException(400, "Link expired")
 
-    db = _get_db()
     name = ""
 
     from starlette.responses import RedirectResponse
@@ -267,7 +271,7 @@ async def auth_email_verify(request: Request, token: str = ""):
     base_url = os.environ.get("CHAT_BASE_URL", "")
     redirect_url = f"{base_url}/chat" if base_url else "/chat"
     redirect = RedirectResponse(url=redirect_url, status_code=302)
-    _authenticate(db, "email", data["provider_id"], name, data["fingerprint"], redirect)
+    _authenticate(db, "email", row["provider_id"], name, row["fingerprint"], redirect)
     return redirect
 
 
@@ -800,5 +804,8 @@ def mount_chat(app):
     )
 
     _load_disposable_domains()
+
+    db = _get_db()
+    seed_event_room(db, DEFAULT_EVENT_ID, "Stone Techno 2026")
 
     return purge_loop

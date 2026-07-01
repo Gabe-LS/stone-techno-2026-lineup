@@ -368,7 +368,11 @@ async function setName() {
     currentUser.display_name = name;
     await connectWS();
     await loadRooms();
-    renderRoomList();
+    if (rooms.length === 1) {
+      openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
+    } else {
+      renderRoomList();
+    }
   } catch (e) { showToast(e.message); }
 }
 
@@ -1677,6 +1681,8 @@ async function route() {
       } catch { roomName = 'Chat'; }
     }
     openRoom(roomId, roomName, roomType);
+  } else if (rooms.length === 1) {
+    openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
   } else {
     currentRoom = null;
     currentRoomName = null;

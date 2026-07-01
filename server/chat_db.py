@@ -48,6 +48,14 @@ def init_chat_db(db: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            token      TEXT PRIMARY KEY,
+            email      TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            fingerprint TEXT,
+            expires_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS bans (
             id                 TEXT PRIMARY KEY,
             user_id            TEXT,
@@ -332,13 +340,8 @@ def get_rooms_by_event(db: sqlite3.Connection, event_id: str) -> list[sqlite3.Ro
     ).fetchall()
 
 
-def seed_stage_rooms(
-    db: sqlite3.Connection, event_id: str, stages: dict[str, dict]
-) -> None:
-    now = _now()
-    create_room(db, f"{event_id}:general", event_id, "general", "General")
-    for stage_id, stage in stages.items():
-        create_room(db, stage_id, event_id, "stage", stage["name"])
+def seed_event_room(db: sqlite3.Connection, event_id: str, event_name: str) -> None:
+    create_room(db, f"{event_id}:general", event_id, "general", event_name)
 
 
 # --- Messages ---
