@@ -286,27 +286,30 @@ Privacy-first ephemeral group chat at `/chat`. Messages auto-delete after 60 min
 
 ### Features
 
-- **Single room per event** — auto-opens on login, no room list
+- **Main room auto-opens** on login. Path-based routing: `/chat`, `/chat/r/{id}`, `/chat/d/{user}`, `/chat/m/{id}`, `/chat/v/{token}`, `/chat/msg/{id}`.
 - **Auth**: Email magic link via Maileroo (DB-backed tokens, survive restarts). Google/Apple OAuth ready (backend implemented). 7,860 disposable domains blocked. Email validated via RFC 5322 + DNS MX.
-- **Profile**: mandatory name + country + avatar. Circular pan+zoom avatar editor with friction slider, 128x128 AVIF stored in DB. Searchable country dropdown with 195 countries + local name aliases, arrow key navigation.
-- **Moderation**: word filter + OpenAI omni-moderation + GPT-5.4-nano drug detection. Images moderated via WebP data URI, videos via 3 extracted frames. All layers on every message, 2+3 in parallel.
+- **Profile**: mandatory username (unique, `a-z 0-9 . _ -`) + avatar + country. Optional display name (Latin Unicode). Circular pan+zoom avatar editor with friction slider, 128x128 WebP stored in DB. Searchable country dropdown with 195 countries + local name aliases. 12 user colors assigned at registration. Live bubble preview during setup. OpenAI moderation on submit.
+- **Moderation**: word filter (1,546 terms) + OpenAI omni-moderation + GPT content detection (drugs, spam, payment links, external links). Images moderated via WebP data URI, videos via 3 extracted frames. Duplicate message detection (2-min window).
 - **Strike system**: warning, 30-min mute, permanent ban. Drug terms escalate faster.
-- **Media**: photos (client resize + WebP + server AVIF), videos (Mediabunny + WebCodecs, HEVC/H.264 fallback, hardware-accelerated, trim editor for >60s), location sharing, meetup cards. All with SVG icons.
-- **Optimistic messaging**: messages appear instantly, moderation runs async. Rejected messages removed.
+- **Media**: photos (client resize + WebP, stored as-is), videos (Mediabunny + WebCodecs, HEVC/H.264 fallback, hardware-accelerated, trim editor for >60s), location sharing, meetup cards. All with SVG icons.
+- **Unread badges**: red pill badges on room items and tab headers (Rooms/Meetups/DMs). Room memberships track joined rooms + last-read. Server pushes badge updates via WS for offline members. Auto-clears on room open.
+- **Message permalinks**: `/chat/msg/{id}` resolves to room, opens it, scrolls to and highlights message. Graceful fallback for deleted messages.
+- **Meetup cards**: Join/Joined button (hidden for creator), attendee count, auto-join chat on join.
 - **Message delete**: right-click/long-press on own messages within 120s, inline confirmation.
-- **Bubble chat**: pastel blue/purple, reply quotes, reactions (hover on desktop, long-press on mobile)
-- **Video player**: inline play/pause, fullscreen icon, frame sync between inline and expanded views
-- **Meetups**: dedicated rooms, GPS location, 15-min interval datetime picker, attendee list
-- **Blocking/Reporting**: prevents DMs, message snapshot preserved for admin review
-- **Admin**: `/chat/admin?admin_token=...` — reports, ban/dismiss
-- **Desktop**: sidebar + chat, centered modals. **Mobile**: bottom drawers (ready for mobile layout)
+- **Bubble chat**: user-colored pastels, reply quotes, reactions (hover on desktop, long-press on mobile). Photo avatars in bubbles.
+- **Video player**: inline play/pause, fullscreen icon, frame sync between inline and expanded views.
+- **Settings**: avatar in header opens menu (Profile edit, Notifications, Log out).
+- **Desktop**: sidebar + chat, centered modals. **Mobile**: bottom drawers.
 - **Auto-purge**: runs on startup + every 30s. Deletes expired messages, meetups, sessions, media files.
+- **Design system**: CSS custom properties — gray scale (WCAG AA/AAA), font scale, spacing scale, 12 user colors, standardized dialogs/toasts.
 
 ### Chat Database (chat.db, separate from hearts.db)
 
 ```
-users (country, avatar_url), sessions, email_tokens, avatars (BLOB),
-bans, rooms, messages (60-min TTL), message_reactions,
+users (username, display_name, country, avatar_url, color_index),
+sessions, email_tokens, avatars (WebP BLOB),
+bans, rooms (is_main), room_memberships (last_read_at),
+messages (60-min TTL), message_reactions,
 meetups (30-min grace), meetup_attendees, dm_participants,
 blocks, reports, strikes
 ```

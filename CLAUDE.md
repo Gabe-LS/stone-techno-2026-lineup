@@ -256,9 +256,10 @@ Production: Docker on DigitalOcean VPS behind Caddy (auto-TLS). DB at `server/da
 4. Update DNS: replace `include:amazonses.com` with `include:_spf.maileroo.com` in SPF
 5. Add DKIM record `mta._domainkey.deftlab.dev` if not already done
 6. Ensure `ffmpeg` + `ffprobe` are in the Docker image (video upload)
-7. Install new Python deps: `pip install email-validator maileroo`
-8. `chat/disposable_domains.txt` is committed — ships with the code
+7. Install new Python deps: `pip install email-validator maileroo regex`
+8. `chat/disposable_domains.txt` and `chat/blocklist.txt` are committed — ship with the code
 9. `chat/uploads/` directory is auto-created — no manual setup needed
+10. Run DB migration: add columns `username`, `username_lower`, `color_index`, `is_main` to existing tables; create `room_memberships`, `email_tokens`, `avatars` tables
 
 ## Push Notifications
 
@@ -282,12 +283,13 @@ Extends the existing FastAPI server — no separate service. Two SQLite database
 ### Chat Database (chat.db)
 
 ```
-users              — id, provider, provider_id, display_name, country, avatar_url, device_fingerprint, muted_until
+users              — id, provider, provider_id, display_name, username, username_lower, country, avatar_url, color_index, device_fingerprint, muted_until
 sessions           — id, user_id, token, expires_at
 email_tokens       — token, email, provider_id, fingerprint, expires_at (DB-backed, survives restart)
-avatars            — user_id (PK), data (BLOB, AVIF 128x128)
+avatars            — user_id (PK), data (BLOB, WebP 128x128)
 bans               — id, provider, provider_id, device_fingerprint, reason (survives user deletion)
-rooms              — id, event_id, type (general/meetup/dm), name — single room per event
+rooms              — id, event_id, type (general/meetup/dm), name, is_main
+room_memberships   — user_id + room_id (PK), joined_at, last_read_at (tracks joined rooms + unread)
 messages           — id, room_id, user_id, type, content, reply_to_id, expires_at (60 min default)
 message_reactions  — message_id + user_id + emoji (PK), CASCADE on message delete
 meetups            — id, creator_id, stage_id, title, location, meetup_time, expires_at (meetup_time + 30 min)
@@ -304,11 +306,15 @@ Three passwordless providers: Google OAuth, Apple Sign-In, Email magic link (via
 
 ### Profile Setup
 
-Mandatory before entering chat: display name, country, avatar photo. Profile prompt shown on first login.
+Mandatory before entering chat: username, avatar photo, country. Optional display name. Profile prompt shown on first login.
 
-- **Avatar**: circular 128px pan+zoom editor. Click to select image (min 128x128), drag to pan, custom friction slider to zoom. Client crops to 128x128 via `createImageBitmap` with `resizeQuality: 'high'`. Server converts to AVIF and stores as blob in `avatars` table. Served via `/chat/api/avatar/{user_id}` with 24h cache.
-- **Country**: searchable dropdown with 195 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only. Arrow key navigation, Enter to select, first result highlighted.
-- **Name**: 3-30 characters.
+- **Username**: unique, `a-z 0-9 . _ -`, 2-20 chars, case-insensitive uniqueness via `username_lower`. Live availability check (400ms debounce). Shown in bubbles when no display name set.
+- **Display name**: optional, Latin Unicode letters + digits + spaces + `. _ -`, 2-30 chars. Replaces username in bubbles when set. Live validation.
+- **Avatar**: circular 128px pan+zoom editor. Click to select image (min 128x128), drag to pan, custom friction slider to zoom. Client crops to 128x128 via `createImageBitmap` with `resizeQuality: 'high'`. Stored as WebP blob in `avatars` table. Served via `/chat/api/avatar/{user_id}?v=timestamp` (version stamp for cache busting). Large images (>2000px) downscaled in browser for smooth editor, full-res used for final crop.
+- **Country**: searchable dropdown with 195 countries + local name aliases (Deutschland, Italia, Espana, etc.). Search matches from start of word only, exact match for 2-char codes, 3+ chars for aliases. Arrow key navigation, Enter to select, first result highlighted.
+- **User colors**: 12 vivid+pastel color pairs assigned randomly at registration (stored as `color_index`). 13th "self" color for own messages. Others see your assigned color.
+- **Name moderation**: OpenAI omni-moderation on submit (no word filter for names — too many false positives).
+- **Profile edit**: settings menu via avatar in header. Edit display name, avatar (full pan+zoom editor), country. Live preview bubble.
 
 ### Moderation Pipeline
 
@@ -316,7 +322,7 @@ Every message passes through three layers before broadcast:
 
 1. **Word filter** (instant) — in-memory set from `chat/blocklist.txt`. Drug terms, slurs, spam. Character substitution normalization (@→a, 0→o, etc.).
 2. **OpenAI omni-moderation-latest** (free) — harassment, hate, violence, sexual content. Supports images (WebP data URI) and video (3 frames at 25/50/75% extracted by ffmpeg). Via raw httpx.
-3. **GPT-5.4-nano drug detection** (Responses API, reasoning=none, ~$4.65/festival) — custom prompt catches subtle drug slang (party favors, rolling, just dropped, etc.).
+3. **GPT-5.4-nano content detection** (Responses API, reasoning=none) — catches drugs, spam/scams, payment links, external platform links (Telegram, WhatsApp, Discord). Explicit safe list for festival conversation.
 
 Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before AI calls (saves API round-trips).
 
@@ -326,23 +332,29 @@ Layers 2 and 3 run in parallel via `asyncio.gather`. Word filter blocks before A
 
 ### Chat UI
 
-Single room per event — auto-opens on login (no room list). Single HTML file (`server/chat/chat.html`).
+Main room auto-opens on login. Path-based routing (`/chat`, `/chat/r/{id}`, `/chat/d/{user}`, `/chat/m/{id}`, `/chat/msg/{id}`). Single HTML file (`server/chat/chat.html`).
 
-- **Bubble style**: pastel blue (own) / pastel purple (others), dark text, time bottom-right
+- **Design system**: CSS custom properties for grays (7 levels, WCAG AA/AAA), fonts (xxs-xl), spacing (4px scale), radius (sm-pill), shadows (sm-lg). 12 user color pairs + self color.
+- **Bubble style**: user-colored pastels (assigned at registration), dark text, time bottom-right
+- **Header**: room name + online count, user avatar (opens settings menu: Profile, Notifications, Log out)
 - **Replies**: double-click on desktop, swipe toward center on mobile. Quote shown inside bubble.
 - **Reactions**: hover-based on desktop (200ms dismiss), long-press on mobile. 6-emoji picker. Button outside bubble with 88px hover zone.
 - **Input bar**: + button (meetup, location, photo, video) on left, emoji picker icon inside input, send button on right. All SVG icons.
 - **Images**: client-side resize via createImageBitmap (high quality), WebP storage, image viewer overlay on click
 - **Videos**: client-side processing via Mediabunny + WebCodecs. HEVC with H.264 fallback, hardware-accelerated. Auto re-encodes if >1080p, >10Mbps, >30fps, or non-AAC audio. Trim editor for >60s. Inline playback (click play/pause, fullscreen icon), expanded viewer with frame sync.
 - **Location sharing**: GPS with confirmation dialog, card with map pin icon
-- **Meetup creation**: modal with title, date + hour/minute selects (15-min intervals), GPS location, note. Card with calendar icon.
+- **Meetup cards**: calendar icon, title, time, "N going" count. Full-width Join/Joined button below card (hidden for creator). Join auto-subscribes to meetup chat for notifications.
+- **Meetup creation**: modal with title, date + hour/minute selects (15-min intervals), GPS location, note.
 - **Message delete**: right-click bubble (desktop) or long-press (mobile), confirmation in same action sheet, 120s window, server enforced
+- **Message permalinks**: `/chat/msg/{id}` resolves to room, opens it, scrolls to and highlights message. Graceful fallback for deleted messages.
+- **Unread badges**: red pill badges on room items and tab headers. `room_memberships` table tracks joined rooms + `last_read_at`. Server sends `badge_counts` on connect and `badge_update` on new messages for offline members. `mark_read` clears on room open. Duplicate message detection (2-min window, 5+ chars).
 - **User menu**: action sheet (Send Message, Block User with inline confirmation, Cancel). Centered modal on desktop.
 - **Optimistic messaging**: messages appear instantly with pending state, confirmed on ack, removed if moderation rejects
 - **Scroll**: messages pushed to bottom via flex justify-content, app hidden until routing completes, ResizeObserver locks scroll for 1.5s after render
 - **Desktop**: sidebar + chat panel side-by-side (768px breakpoint)
-- **Font scale**: 15px (base) → 13px (secondary) → 11px (tertiary) → 10px (timestamps)
-- **Debug**: `dbg()` with timecodes, `verify()` checks DOM state after every action
+- **URL structure**: `/chat` (main), `/chat/r/{id}` (room), `/chat/d/{user}` (DM), `/chat/m/{id}` (meetup), `/chat/v/{token}` (verify email), `/chat/msg/{id}` (message permalink). API under `/chat/api/` with flat routes (`/me`, `/login`, `/verify`, `/profile`, `/logout`, `/rooms`, etc.)
+- **Toast**: word-based duration (1.5s + 300ms/word, min 4s), balanced text, max 360px
+- **Debug**: 126 `dbg()` calls with timecodes across all functions, `verify()` checks DOM state
 
 ### Chat Tests
 
