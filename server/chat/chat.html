@@ -306,7 +306,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 
 /* --- Unread badges --- */
 .unread-badge { min-width: 18px; padding: 3px 6px; background: var(--color-accent); color: #fff; border-radius: var(--radius-pill); font-size: var(--font-xxs); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; line-height: 1; box-sizing: border-box; text-align: center; }
-.tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; padding: 3px 6px; background: var(--color-accent); color: #fff; border-radius: var(--radius-pill); font-size: var(--font-xxs); font-weight: 700; margin-left: 6px; vertical-align: middle; line-height: 1; box-sizing: border-box; text-align: center; position: relative; top: -1px; }
+.tab-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); margin-left: 6px; vertical-align: middle; position: relative; top: -1px; }
+.tab-dot.active { display: inline-block; }
+
+/* --- Hamburger menu (mobile) --- */
+.chat-hamburger { display: none; background: none; border: none; color: #fff; width: 48px; height: 48px; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+.hamburger-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); position: absolute; top: 10px; right: 8px; }
+.hamburger-dot.active { display: block; }
+.chat-menu { display: none; }
+.chat-menu-overlay { display: none; }
 
 /* --- Empty state --- */
 .empty { text-align: center; padding: var(--space-2xl) var(--space-xl); color: var(--color-muted); font-size: var(--font-sm); }
@@ -332,6 +340,20 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
   .sidebar.visible { display: flex; flex-direction: column; height: 100%; }
   .main-panel { display: none; }
   .main-panel.visible { display: flex; flex-direction: column; height: 100%; }
+  .chat-hamburger { display: flex; }
+  .chat-menu { position: fixed; top: 48px; left: 0; right: 0; z-index: 49; background: var(--gray-900); flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); max-height: 70vh; overflow-y: auto; }
+  .chat-menu.open { display: flex; }
+  .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px 16px; font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }
+  .menu-section .menu-arrow { margin-left: auto; transition: transform 0.2s; font-size: 12px; }
+  .menu-section.expanded .menu-arrow { transform: rotate(90deg); }
+  .menu-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); display: none; flex-shrink: 0; }
+  .menu-dot.active { display: inline-block; }
+  .menu-items { display: none; background: var(--gray-800); }
+  .menu-items.open { display: block; }
+  .menu-items .room-item { padding: var(--space-sm) var(--space-lg) var(--space-sm) 24px; border-bottom-color: var(--gray-700); }
+  .menu-items .room-item .room-name { color: #fff; }
+  .menu-items .room-item .room-count { color: var(--gray-400); }
+  .chat-menu-overlay.open { display: block; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 47; background: rgba(0,0,0,0.3); }
 }
 </style>
 </head>
@@ -1102,23 +1124,26 @@ function renderRoomList() {
   const app = document.getElementById('app');
   const roomsHtml = _renderRoomItemsHtml();
 
+  const hamburgerSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
   if (isMobile) {
     app.innerHTML = `
-      <div class="header"><button class="back" onclick="goBack()">←</button><span class="title">Chats</span></div>
-      <div class="tabs">
-        <button class="active" onclick="switchTab(this,'stages')">Rooms</button>
-        <button onclick="switchTab(this,'meetups')">Meetups</button>
-        <button onclick="switchTab(this,'dms')">DMs</button>
+      <div class="header">
+        <span class="title">Chats</span>
+        <button class="chat-hamburger" onclick="toggleChatMenu()">${hamburgerSvg}<span class="hamburger-dot"></span></button>
       </div>
-      <div class="content"><ul class="room-list" id="room-list">${roomsHtml}</ul></div>`;
+      <div class="content" style="display:flex;align-items:center;justify-content:center">
+        <div class="empty">Tap the menu to pick a room</div>
+      </div>
+      ${_renderChatMenuHtml()}`;
+    setTimeout(() => toggleChatMenu(), 100);
   } else {
     app.innerHTML = `
       <div class="sidebar visible">
         <div class="header"><span class="title">Chats</span></div>
         <div class="tabs">
-          <button class="active" onclick="switchTab(this,'stages')">Rooms</button>
-          <button onclick="switchTab(this,'meetups')">Meetups</button>
-          <button onclick="switchTab(this,'dms')">DMs</button>
+          <button class="active" onclick="switchTab(this,'stages')">Rooms<span class="tab-dot"></span></button>
+          <button onclick="switchTab(this,'meetups')">Meetups<span class="tab-dot"></span></button>
+          <button onclick="switchTab(this,'dms')">DMs<span class="tab-dot"></span></button>
         </div>
         <div class="content"><ul class="room-list" id="room-list">${roomsHtml}</ul></div>
       </div>
@@ -1149,7 +1174,7 @@ function _renderRoomItemsHtml() {
     const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
     const isMember = r.is_member !== false;
     const bellHtml = r.is_main ? '' : `<button type="button" class="room-bell${isMember ? ' active' : ''}" onclick="event.stopPropagation();_toggleRoomMembership('${r.id}',this)" aria-label="${isMember ? 'Mute room' : 'Get notified'}"><svg width="16" height="16" viewBox="0 0 24 24" fill="${isMember ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>`;
-    return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="openRoom('${r.id}','${esc(r.name)}','${r.type}')">
+    return `<li class="room-item${currentRoom === r.id ? ' active' : ''}" data-room-id="${r.id}" onclick="closeChatMenu();openRoom('${r.id}','${esc(r.name)}','${r.type}')">
       <div class="room-info"><div class="room-name">${esc(r.name)}</div><div class="room-count">${count} online</div></div>
       <div class="room-meta">${badgeHtml}</div>
       ${bellHtml}
@@ -1215,17 +1240,15 @@ function updateTabBadges() {
     else if (t === 'meetup') byType.meetup += count;
     else if (t === 'dm') byType.dm += count;
   }
-  const tabs = document.querySelectorAll('.tabs button');
-  [byType.rooms, byType.meetup, byType.dm].forEach((total, i) => {
-    const btn = tabs[i];
-    if (!btn) return;
-    const existing = btn.querySelector('.tab-badge');
-    if (total > 0) {
-      const html = `<span class="tab-badge">${total > 99 ? '99+' : total}</span>`;
-      if (existing) existing.outerHTML = html;
-      else btn.insertAdjacentHTML('beforeend', html);
-    } else if (existing) existing.remove();
+  document.querySelectorAll('.tabs button').forEach((btn, i) => {
+    const dot = btn.querySelector('.tab-dot');
+    if (dot) dot.classList.toggle('active', [byType.rooms, byType.meetup, byType.dm][i] > 0);
   });
+  document.querySelectorAll('.menu-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', [byType.rooms, byType.meetup, byType.dm][i] > 0);
+  });
+  const total = Object.values(unreadByRoom).reduce((s, c) => s + c, 0);
+  document.querySelector('.hamburger-dot')?.classList.toggle('active', total > 0);
   _updateTitleBadge();
 }
 
@@ -1388,6 +1411,7 @@ function renderChatView(roomName) {
     ? `<div class="header-avatar" onclick="showSettingsMenu()"><img src="${avatarSrc}"></div>`
     : `<div class="header-avatar" onclick="showSettingsMenu()" style="background:var(--gray-500);display:flex;align-items:center;justify-content:center;color:#fff;font-size:var(--font-xs);font-weight:700">${(currentUser?.display_name || currentUser?.username || '?')[0].toUpperCase()}</div>`;
 
+  const hamburgerSvg2 = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
   if (isMobile) {
     document.getElementById('app').innerHTML = `
       <div class="header">
@@ -1397,12 +1421,14 @@ function renderChatView(roomName) {
           <span class="online">${onlineCount} online</span>
         </div>
         ${headerAvatar}
+        <button class="chat-hamburger" onclick="toggleChatMenu()">${hamburgerSvg2}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" id="msg-scroll">
         <div class="messages" id="messages"></div>
         <div class="typing-indicator" id="typing"></div>
       </div>
-      ${inputBar}`;
+      ${inputBar}
+      ${_renderChatMenuHtml()}`;
   } else {
     const mainPanel = document.querySelector('.main-panel');
     if (mainPanel) {
@@ -1860,6 +1886,93 @@ function sendMessage() {
   input.value = '';
   cancelReply();
   wsSend('typing', { room_id: currentRoom, active: false });
+}
+
+function _renderChatMenuHtml() {
+  return `
+    <div class="chat-menu" id="chat-menu">
+      <button class="menu-section" onclick="toggleMenuSection('rooms')">Rooms <span class="menu-dot"></span><span class="menu-arrow">&#9656;</span></button>
+      <div class="menu-items" id="menu-rooms"></div>
+      <button class="menu-section" onclick="toggleMenuSection('meetups')">Meetups <span class="menu-dot"></span><span class="menu-arrow">&#9656;</span></button>
+      <div class="menu-items" id="menu-meetups"></div>
+      <button class="menu-section" onclick="toggleMenuSection('dms')">DMs <span class="menu-dot"></span><span class="menu-arrow">&#9656;</span></button>
+      <div class="menu-items" id="menu-dms"></div>
+      <button class="menu-section" onclick="openNotificationsModal();closeChatMenu()">Notifications</button>
+      <button class="menu-section" onclick="closeChatMenu();showSettingsMenu()">Profile</button>
+    </div>
+    <div class="chat-menu-overlay" id="chat-menu-overlay" onclick="closeChatMenu()"></div>`;
+}
+
+function toggleChatMenu() {
+  dbg('[MENU] toggleChatMenu');
+  const menu = document.getElementById('chat-menu');
+  const overlay = document.getElementById('chat-menu-overlay');
+  if (!menu) return;
+  const opening = !menu.classList.contains('open');
+  menu.classList.toggle('open');
+  overlay?.classList.toggle('open');
+  if (opening) _populateMenuSections();
+}
+
+function closeChatMenu() {
+  dbg('[MENU] closeChatMenu');
+  document.getElementById('chat-menu')?.classList.remove('open');
+  document.getElementById('chat-menu-overlay')?.classList.remove('open');
+}
+
+async function toggleMenuSection(section) {
+  dbg('[MENU] toggleMenuSection', section);
+  const sectionMap = { rooms: 0, meetups: 1, dms: 2 };
+  const idx = sectionMap[section];
+  if (idx === undefined) return;
+  const buttons = document.querySelectorAll('#chat-menu .menu-section');
+  const btn = buttons[idx];
+  const items = document.getElementById('menu-' + section);
+  if (!btn || !items) return;
+  const expanding = !btn.classList.contains('expanded');
+  buttons.forEach((b, i) => { if (i < 3) { b.classList.remove('expanded'); document.getElementById('menu-' + ['rooms','meetups','dms'][i])?.classList.remove('open'); } });
+  if (expanding) {
+    btn.classList.add('expanded');
+    items.classList.add('open');
+    await _loadMenuSection(section, items);
+  }
+}
+
+async function _loadMenuSection(section, container) {
+  if (section === 'rooms') {
+    container.innerHTML = '<ul class="room-list">' + _renderRoomItemsHtml() + '</ul>';
+  } else if (section === 'meetups') {
+    try {
+      const meetups = await api('/meetups');
+      if (!meetups.length) { container.innerHTML = '<div class="empty">No active meetups</div>'; return; }
+      container.innerHTML = '<ul class="room-list">' + meetups.map(m => {
+        const unread = unreadByRoom[m.id] || 0;
+        const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+        return `<li class="room-item${currentRoom === m.id ? ' active' : ''}" data-room-id="${m.id}" onclick="closeChatMenu();openRoom('${m.id}','${esc(m.title)}','meetup')">
+          <div class="room-info"><div class="room-name">${esc(m.title)}</div><div class="room-count">${fmtTime(m.meetup_time)} · ${m.attendee_count} going</div></div>
+          <div class="room-meta">${badgeHtml}</div>
+        </li>`;
+      }).join('') + '</ul>';
+    } catch { container.innerHTML = '<div class="empty">Could not load meetups</div>'; }
+  } else if (section === 'dms') {
+    try {
+      const dms = await api('/dms');
+      if (!dms.length) { container.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
+      container.innerHTML = '<ul class="room-list">' + dms.map(dm => {
+        const unread = unreadByRoom[dm.room_id] || 0;
+        const badgeHtml = unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+        return `<li class="room-item${currentRoom === dm.room_id ? ' active' : ''}" data-room-id="${dm.room_id}" onclick="closeChatMenu();openRoom('${dm.room_id}','${esc(dm.other_name)}','dm')">
+          ${avatarHtml(dm.other_name, 0)}
+          <div class="room-info"><div class="room-name">${esc(dm.other_name)}</div></div>
+          <div class="room-meta">${badgeHtml}</div>
+        </li>`;
+      }).join('') + '</ul>';
+    } catch { container.innerHTML = '<div class="empty">Could not load DMs</div>'; }
+  }
+}
+
+function _populateMenuSections() {
+  updateTabBadges();
 }
 
 function leaveRoom() {
