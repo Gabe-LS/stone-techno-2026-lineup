@@ -254,7 +254,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .profile-field { width: 320px; position: relative; }
 .profile-field input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); text-align: center; outline: none; font-family: inherit; transition: border-color 0.15s; }
 .profile-field input:focus { border-color: var(--gray-400); }
-.profile-field input.valid { border-color: var(--color-success); }
+.profile-field input.valid, .profile-field input.valid:focus { border-color: var(--color-success); }
 .profile-field .field-status { position: absolute; right: var(--space-md); top: 50%; transform: translateY(-50%); font-size: var(--font-xs); }
 .profile-field .field-status.ok { color: var(--color-success); }
 .profile-field .field-status.err { color: var(--color-accent); }
@@ -265,7 +265,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .country-picker { position: relative; width: 320px; }
 .country-picker input { width: 100%; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--font-base); outline: none; font-family: inherit; text-align: center; transition: border-color 0.15s; }
 .country-picker input:focus { border-color: var(--gray-400); }
-.country-picker input.valid { border-color: var(--color-success); }
+.country-picker input.valid, .country-picker input.valid:focus { border-color: var(--color-success); }
 .country-list { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md); z-index: 50; display: none; scrollbar-width: none; }
 .country-list::-webkit-scrollbar { display: none; }
 .country-picker.open .country-list { display: block; }
@@ -695,7 +695,8 @@ async function initAvatarEditor(file) {
     <div class="avatar-edit" id="avatar-edit">
       <img src="${url}" id="avatar-edit-img">
     </div>`;
-  el.onclick = null;
+  let _avatarDragged = false;
+  el.onclick = () => { if (!_avatarDragged) uploadAvatar(); };
 
   const thumb = document.getElementById('avatar-zoom-thumb');
   const track = document.getElementById('avatar-zoom-track');
@@ -730,6 +731,7 @@ async function initAvatarEditor(file) {
   let startX, startY, origX, origY;
   const onMove = (e) => {
     e.preventDefault();
+    _avatarDragged = true;
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     const s = _avatarState;
@@ -737,13 +739,15 @@ async function initAvatarEditor(file) {
     s.y = clampAvatarY(origY + (cy - startY));
     updateAvatarView();
   };
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
-  edit.onmousedown = (e) => { e.preventDefault(); startX = e.clientX; startY = e.clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
-  edit.ontouchstart = (e) => { e.preventDefault(); startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
+  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); setTimeout(() => { _avatarDragged = false; }, 10); };
+  edit.onmousedown = (e) => { e.preventDefault(); _avatarDragged = false; startX = e.clientX; startY = e.clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
+  edit.ontouchstart = (e) => { e.preventDefault(); _avatarDragged = false; startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
 }
 
 function clampAvatarX(x) { const s = _avatarState; return Math.min(0, Math.max(x, 128 - s.natW * s.scale)); }
 function clampAvatarY(y) { const s = _avatarState; return Math.min(0, Math.max(y, 128 - s.natH * s.scale)); }
+
+let _avatarPreviewTimer = null;
 
 function updateAvatarView() {
   const img = document.getElementById('avatar-edit-img');
@@ -752,6 +756,32 @@ function updateAvatarView() {
   img.style.width = (s.natW * s.scale) + 'px';
   img.style.height = (s.natH * s.scale) + 'px';
   img.style.transform = `translate(${s.x}px, ${s.y}px)`;
+  clearTimeout(_avatarPreviewTimer);
+  _avatarPreviewTimer = setTimeout(updateAvatarPreview, 400);
+}
+
+async function updateAvatarPreview() {
+  const s = _avatarState;
+  if (!s) return;
+  const cropX = -s.x / s.scale;
+  const cropY = -s.y / s.scale;
+  const cropSize = 128 / s.scale;
+  try {
+    const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
+    const canvas = new OffscreenCanvas(128, 128);
+    canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
+    const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    const url = URL.createObjectURL(blob);
+    const el = document.getElementById('preview-bubble');
+    if (el) {
+      const img = el.querySelector('.avatar-sm img');
+      if (img) { URL.revokeObjectURL(img.src); img.src = url; }
+      else {
+        const av = el.querySelector('.avatar-sm');
+        if (av) { av.innerHTML = `<img src="${url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`; }
+      }
+    }
+  } catch {}
 }
 
 async function submitAvatarCrop() {
