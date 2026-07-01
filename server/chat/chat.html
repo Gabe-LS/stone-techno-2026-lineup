@@ -349,10 +349,10 @@ async function authEmail() {
 function renderNamePrompt() {
   dbg('renderNamePrompt');
   document.getElementById('app').innerHTML = `
-    <div class="header"><span class="title">Choose a name</span></div>
     <div class="name-prompt">
+      <h2>Choose a name</h2>
       <p style="color:var(--color-muted)">Pick a display name for chat</p>
-      <input id="name-input" placeholder="Your name" maxlength="30" value="${currentUser?.display_name || ''}">
+      <input id="name-input" placeholder="Your name" maxlength="30" value="${currentUser?.display_name || ''}" onkeydown="if(event.key==='Enter')setName()">
       <button onclick="setName()">Continue</button>
     </div>`;
   document.getElementById('name-input').focus();
@@ -367,6 +367,7 @@ async function setName() {
     await api('/auth/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: name }) });
     currentUser.display_name = name;
     await connectWS();
+    await loadRooms();
     renderRoomList();
   } catch (e) { showToast(e.message); }
 }

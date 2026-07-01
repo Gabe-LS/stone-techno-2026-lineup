@@ -100,7 +100,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         "chat_session",
         token,
-        httponly=True,
+        httponly=False,
         secure=is_prod,
         samesite="lax" if not is_prod else "strict",
         max_age=7 * 24 * 3600,
@@ -260,7 +260,7 @@ async def auth_email_verify(request: Request, token: str = ""):
         raise HTTPException(400, "Link expired")
 
     db = _get_db()
-    name = data["email"].split("@")[0]
+    name = ""
 
     from starlette.responses import RedirectResponse
 
