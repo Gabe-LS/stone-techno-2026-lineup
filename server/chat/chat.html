@@ -212,17 +212,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .country-item:hover, .country-item.highlighted { background: var(--color-surface); }
 .country-item .flag { font-size: 18px; }
 .profile-prompt button { padding: 12px 32px; background: #111; color: #fff; border: none; border-radius: var(--radius); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
-.avatar-upload { width: 80px; height: 80px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.avatar-upload { width: 128px; height: 128px; border-radius: 50%; background: var(--color-surface); border: 2px dashed var(--color-border); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; }
 .avatar-upload img { width: 100%; height: 100%; object-fit: cover; }
 .avatar-upload svg { width: 32px; height: 32px; color: var(--color-muted); }
-.crop-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
-.crop-container { position: relative; max-width: 90vw; max-height: 70vh; overflow: hidden; touch-action: none; }
-.crop-container img { display: block; max-width: 90vw; max-height: 70vh; user-select: none; -webkit-user-drag: none; }
-.crop-square { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); cursor: move; }
-.crop-actions { display: flex; gap: 12px; }
-.crop-actions button { padding: 10px 28px; border: none; border-radius: var(--radius); font-size: var(--font-base); cursor: pointer; font-family: inherit; }
-.crop-actions .crop-cancel { background: rgba(255,255,255,0.15); color: #fff; }
-.crop-actions .crop-confirm { background: #fff; color: #111; font-weight: 600; }
+.avatar-edit { width: 128px; height: 128px; border-radius: 50%; overflow: hidden; position: relative; cursor: grab; touch-action: none; }
+.avatar-edit:active { cursor: grabbing; }
+.avatar-edit img { position: absolute; user-select: none; -webkit-user-drag: none; }
+.avatar-zoom { width: 128px; display: flex; align-items: center; gap: 8px; }
+.avatar-zoom input { flex: 1; accent-color: #fff; }
+.avatar-zoom span { color: rgba(255,255,255,0.5); font-size: var(--font-xs); }
 
 /* --- Empty state --- */
 .empty { text-align: center; padding: 48px 24px; color: var(--color-muted); }
@@ -477,6 +475,8 @@ function selectCountry(code) {
   closeCountryPicker();
 }
 
+let _avatarState = null;
+
 function uploadAvatar() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
@@ -484,99 +484,92 @@ function uploadAvatar() {
     const file = input.files[0];
     if (!file) return;
     const bmp = await createImageBitmap(file);
-    const w = bmp.width, h = bmp.height;
+    if (bmp.width < 128 || bmp.height < 128) { bmp.close(); showToast('Image must be at least 128x128'); return; }
     bmp.close();
-    if (w < 128 || h < 128) { showToast('Image must be at least 128x128'); return; }
-    if (w > 1024 || h > 1024) {
-      const scale = 1024 / Math.max(w, h);
-      const resized = await resizeImage(file, 1024);
-      showAvatarCrop(resized);
-    } else {
-      showAvatarCrop(file);
-    }
+    initAvatarEditor(file);
   };
   input.click();
 }
 
-function showAvatarCrop(file) {
-  document.getElementById('avatar-crop')?.remove();
+async function initAvatarEditor(file) {
+  const bmp = await createImageBitmap(file);
+  const natW = bmp.width, natH = bmp.height;
+  bmp.close();
+  const minScale = 128 / Math.min(natW, natH);
+  const maxScale = Math.max(minScale * 4, 1);
+  const initScale = minScale;
+  _avatarState = { file, natW, natH, scale: initScale, minScale, maxScale, x: 0, y: 0 };
+  _avatarState.x = -(natW * initScale - 128) / 2;
+  _avatarState.y = -(natH * initScale - 128) / 2;
+
   const url = URL.createObjectURL(file);
-  const overlay = document.createElement('div');
-  overlay.id = 'avatar-crop';
-  overlay.className = 'crop-overlay';
-  overlay.innerHTML = `
-    <div style="color:#fff;font-size:var(--font-sm);opacity:0.7">Drag to position the crop</div>
-    <div class="crop-container" id="crop-container">
-      <img src="${url}" id="crop-img">
-      <div class="crop-square" id="crop-square"></div>
-    </div>
-    <div class="crop-actions">
-      <button class="crop-cancel" onclick="closeCrop()">Cancel</button>
-      <button class="crop-confirm" onclick="confirmCrop()">Use photo</button>
+  const el = document.getElementById('avatar-upload');
+  el.innerHTML = `
+    <div class="avatar-edit" id="avatar-edit">
+      <img src="${url}" id="avatar-edit-img">
     </div>`;
-  document.body.appendChild(overlay);
+  el.onclick = null;
+  updateAvatarView();
 
-  const img = document.getElementById('crop-img');
-  img.onload = () => {
-    const rect = img.getBoundingClientRect();
-    const size = Math.min(rect.width, rect.height);
-    const sq = document.getElementById('crop-square');
-    sq.style.width = size + 'px';
-    sq.style.height = size + 'px';
-    sq.style.left = ((rect.width - size) / 2) + 'px';
-    sq.style.top = ((rect.height - size) / 2) + 'px';
-    sq._file = file;
-    sq._imgW = img.naturalWidth;
-    sq._imgH = img.naturalHeight;
-    sq._dispW = rect.width;
-    sq._dispH = rect.height;
-
-    let startX, startY, origLeft, origTop;
-    const onMove = (e) => {
-      const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX + origLeft;
-      const y = (e.touches ? e.touches[0].clientY : e.clientY) - startY + origTop;
-      sq.style.left = Math.max(0, Math.min(x, rect.width - size)) + 'px';
-      sq.style.top = Math.max(0, Math.min(y, rect.height - size)) + 'px';
-    };
-    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
-    sq.onmousedown = (e) => { e.preventDefault(); startX = e.clientX; startY = e.clientY; origLeft = parseFloat(sq.style.left); origTop = parseFloat(sq.style.top); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
-    sq.ontouchstart = (e) => { e.preventDefault(); startX = e.touches[0].clientX; startY = e.touches[0].clientY; origLeft = parseFloat(sq.style.left); origTop = parseFloat(sq.style.top); document.addEventListener('touchmove', onMove); document.addEventListener('touchend', onUp); };
+  const edit = document.getElementById('avatar-edit');
+  let startX, startY, origX, origY;
+  const onMove = (e) => {
+    e.preventDefault();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    const s = _avatarState;
+    s.x = clampAvatarX(origX + cx - startX);
+    s.y = clampAvatarY(origY + cy - startY);
+    updateAvatarView();
+  };
+  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
+  edit.onmousedown = (e) => { e.preventDefault(); startX = e.clientX; startY = e.clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); };
+  edit.ontouchstart = (e) => { e.preventDefault(); startX = e.touches[0].clientX; startY = e.touches[0].clientY; origX = _avatarState.x; origY = _avatarState.y; document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp); };
+  edit.onwheel = (e) => {
+    e.preventDefault();
+    const s = _avatarState;
+    const oldScale = s.scale;
+    s.scale = Math.max(s.minScale, Math.min(s.maxScale, s.scale * (e.deltaY < 0 ? 1.1 : 0.9)));
+    const ratio = s.scale / oldScale;
+    s.x = clampAvatarX(64 - (64 - s.x) * ratio);
+    s.y = clampAvatarY(64 - (64 - s.y) * ratio);
+    updateAvatarView();
   };
 }
 
-function closeCrop() {
-  const overlay = document.getElementById('avatar-crop');
-  if (overlay) { URL.revokeObjectURL(overlay.querySelector('img')?.src); overlay.remove(); }
+function clampAvatarX(x) { const s = _avatarState; return Math.min(0, Math.max(x, 128 - s.natW * s.scale)); }
+function clampAvatarY(y) { const s = _avatarState; return Math.min(0, Math.max(y, 128 - s.natH * s.scale)); }
+
+function updateAvatarView() {
+  const img = document.getElementById('avatar-edit-img');
+  if (!img || !_avatarState) return;
+  const s = _avatarState;
+  img.style.width = (s.natW * s.scale) + 'px';
+  img.style.height = (s.natH * s.scale) + 'px';
+  img.style.left = s.x + 'px';
+  img.style.top = s.y + 'px';
 }
 
-async function confirmCrop() {
-  const sq = document.getElementById('crop-square');
-  if (!sq) return;
-  const file = sq._file;
-  const scaleX = sq._imgW / sq._dispW;
-  const scaleY = sq._imgH / sq._dispH;
-  const cropX = parseFloat(sq.style.left) * scaleX;
-  const cropY = parseFloat(sq.style.top) * scaleY;
-  const cropSize = parseFloat(sq.style.width) * scaleX;
+async function submitAvatarCrop() {
+  const s = _avatarState;
+  if (!s) return null;
+  const cropX = -s.x / s.scale;
+  const cropY = -s.y / s.scale;
+  const cropSize = 128 / s.scale;
 
-  const bmp = await createImageBitmap(file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
+  const bmp = await createImageBitmap(s.file, cropX, cropY, cropSize, cropSize, { resizeWidth: 128, resizeHeight: 128, resizeQuality: 'high' });
   const canvas = new OffscreenCanvas(128, 128);
   canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
   const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
 
-  closeCrop();
-  showToast('Uploading...');
-  try {
-    const form = new FormData();
-    form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
-    const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
-    if (!resp.ok) throw new Error('Upload failed');
-    const result = await resp.json();
-    _profileAvatarUrl = result.url;
-    const el = document.getElementById('avatar-upload');
-    if (el) el.innerHTML = '<img src="' + result.url + '">';
-    dbg('[PROFILE] avatar uploaded:', result.url);
-  } catch (e) { showToast(e.message || 'Upload failed'); }
+  const form = new FormData();
+  form.append('file', new File([blob], 'avatar.webp', { type: 'image/webp' }));
+  const resp = await fetch(API + '/upload/avatar', { method: 'POST', body: form, credentials: 'include' });
+  if (!resp.ok) throw new Error('Upload failed');
+  const result = await resp.json();
+  _profileAvatarUrl = result.url;
+  dbg('[PROFILE] avatar uploaded:', result.url);
+  return result.url;
 }
 
 async function submitProfile() {
@@ -584,8 +577,12 @@ async function submitProfile() {
   const country = _selectedCountry;
   if (name.length < 3) { showToast('Name must be at least 3 characters'); return; }
   if (!country) { showToast('Please select your country'); return; }
-  if (!_profileAvatarUrl) { showToast('Please upload a profile photo'); return; }
+  if (!_avatarState && !_profileAvatarUrl) { showToast('Please upload a profile photo'); return; }
   try {
+    if (_avatarState) {
+      showToast('Processing photo...');
+      await submitAvatarCrop();
+    }
     await api('/auth/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
