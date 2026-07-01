@@ -49,6 +49,9 @@ from chat_db import (
     get_pending_reports,
     resolve_report,
     hash_email,
+    save_push_subscription,
+    delete_push_subscription,
+    get_push_subscription_count,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -826,6 +829,53 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         "height": height,
         "duration": round(duration, 1),
     }
+
+
+# --- Push notifications ---
+
+
+@router.get("/push/vapid-key")
+async def chat_vapid_key():
+    key = os.environ.get("VAPID_PUBLIC_KEY")
+    if not key:
+        raise HTTPException(501, "Push notifications not configured")
+    return Response(
+        content=json.dumps({"public_key": key}),
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/push/subscribe", status_code=204)
+async def chat_push_subscribe(request: Request):
+    user, db = _get_user_from_cookie(request)
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    keys = body.get("keys", {})
+    p256dh = keys.get("p256dh", "")
+    auth = keys.get("auth", "")
+    if not endpoint or not p256dh or not auth:
+        raise HTTPException(422, "Missing subscription fields")
+    save_push_subscription(db, user["id"], endpoint, p256dh, auth)
+    return Response(status_code=204)
+
+
+@router.delete("/push/subscribe", status_code=204)
+async def chat_push_unsubscribe(request: Request):
+    user, db = _get_user_from_cookie(request)
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    if not endpoint:
+        raise HTTPException(422, "Missing endpoint")
+    delete_push_subscription(db, user["id"], endpoint)
+    return Response(status_code=204)
+
+
+@router.get("/push/status")
+async def chat_push_status(request: Request):
+    user, db = _get_user_from_cookie(request)
+    count = get_push_subscription_count(db, user["id"])
+    return {"subscribed": count > 0}
 
 
 # --- Admin ---

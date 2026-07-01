@@ -933,6 +933,22 @@ function handleWSEvent(data) {
       if (!messagesByRoom[data.room_id]) messagesByRoom[data.room_id] = [];
       messagesByRoom[data.room_id].push(data);
       if (currentRoom === data.room_id) { appendMessage(data); scrollToBottom(); }
+      if (document.hidden && data.user_id !== currentUser?.id) {
+        _hiddenUnread = (_hiddenUnread || 0) + 1;
+        _updateTitleBadge();
+        if (Notification.permission === 'granted') {
+          let preview = '';
+          if (data.type === 'text') { try { preview = JSON.parse(data.content).text || ''; } catch { preview = data.content; } }
+          else if (data.type === 'image') preview = 'Sent a photo';
+          else if (data.type === 'video') preview = 'Sent a video';
+          else if (data.type === 'location') preview = 'Shared a location';
+          const rl = roomTypeLookup[data.room_id] || {};
+          _showBrowserNotification({
+            room_id: data.room_id, type: rl.type || 'general', name: rl.name || '',
+            sender_name: data.display_name, preview: preview.slice(0, 100),
+          });
+        }
+      }
       break;
     case 'message_acked': {
       const msgs = messagesByRoom[currentRoom] || [];
@@ -1010,6 +1026,7 @@ function handleWSEvent(data) {
       else unreadByRoom[data.room_id] = data.count;
       updateBadge(data.room_id);
       updateTabBadges();
+      if (Notification.permission === 'granted' && document.hidden) _showBrowserNotification(data);
       break;
   }
 }
@@ -1147,6 +1164,13 @@ function updateTabBadges() {
       else btn.insertAdjacentHTML('beforeend', html);
     } else if (existing) existing.remove();
   });
+  _updateTitleBadge();
+}
+
+let _hiddenUnread = 0;
+function _updateTitleBadge() {
+  const total = Object.values(unreadByRoom).reduce((s, c) => s + c, 0) + _hiddenUnread;
+  document.title = total > 0 ? `(${total}) Chat` : 'Chat';
 }
 
 async function loadMeetups() {
@@ -2636,9 +2660,52 @@ async function saveProfile() {
   } catch (e) { showToast(e.message); }
 }
 
+let _pushSubscribed = false;
+
+function _urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function _showBrowserNotification(data) {
+  dbg('[NOTIFY] showBrowserNotification', data.room_id, data.type);
+  const sender = data.sender_name || 'Someone';
+  const preview = data.preview || 'New message';
+  let title, body;
+  if (data.type === 'dm') {
+    title = sender;
+    body = preview;
+  } else if (data.type === 'meetup') {
+    title = data.name || 'Meetup';
+    body = sender + ': ' + preview;
+  } else {
+    title = '#' + (data.name || 'Chat');
+    body = sender + ': ' + preview;
+  }
+  const n = new Notification(title, { body, icon: '/favicon.png', tag: 'chat-' + data.room_id });
+  n.onclick = () => { window.focus(); window.location.href = '/chat/r/' + data.room_id; n.close(); };
+}
+
+async function _checkPushStatus() {
+  dbg('[NOTIFY] checkPushStatus');
+  try {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      _pushSubscribed = !!sub;
+      dbg('[NOTIFY] push status:', _pushSubscribed);
+    }
+  } catch { _pushSubscribed = false; }
+}
+
 function openNotificationsModal() {
   dbg('[NOTIFY] openNotificationsModal');
-  const enabled = Notification.permission === 'granted';
+  const browserEnabled = Notification.permission === 'granted';
+  const active = browserEnabled && _pushSubscribed;
   document.getElementById('notifications-modal')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'notifications-modal';
@@ -2649,12 +2716,16 @@ function openNotificationsModal() {
       <button class="modal-close" onclick="closeNotificationsModal()">&times;</button>
     </div>
     <div class="modal-body" style="text-align:center">
-      <p style="color:var(--color-muted);font-size:var(--font-sm);margin:0">
-        ${enabled ? 'Notifications are enabled.' : 'Get notified when new messages arrive.'}
+      <p style="color:var(--color-muted);font-size:var(--font-sm);margin:0 0 12px 0">
+        Get notified when new messages arrive in your DMs, meetups, and rooms.
       </p>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:center;font-size:var(--font-sm)">
+        <div>In-app alerts: <span style="color:${browserEnabled ? '#4ade80' : 'var(--gray-400)'}">${browserEnabled ? 'On' : 'Off'}</span></div>
+        <div>Push (app closed): <span style="color:${_pushSubscribed ? '#4ade80' : 'var(--gray-400)'}">${_pushSubscribed ? 'On' : 'Off'}</span></div>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="modal-btn-primary" onclick="${enabled ? 'disableNotifications()' : 'enableNotifications()'}">${enabled ? 'Disable notifications' : 'Enable notifications'}</button>
+      <button class="modal-btn-primary" onclick="${active ? '_disableAllNotifications()' : '_enableAllNotifications()'}">${active ? 'Disable notifications' : 'Enable notifications'}</button>
     </div>
   </div>`;
   overlay.addEventListener('click', closeNotificationsModal);
@@ -2668,20 +2739,65 @@ function closeNotificationsModal() {
   if (el) { el.classList.remove('open'); setTimeout(() => el.remove(), 200); }
 }
 
-async function enableNotifications() {
-  dbg('[NOTIFY] enableNotifications');
+async function _enableAllNotifications() {
+  dbg('[NOTIFY] enableAllNotifications');
   const perm = await Notification.requestPermission();
-  if (perm === 'granted') {
-    showToast('Notifications enabled');
-  } else {
+  if (perm !== 'granted') {
     showToast('Permission denied. Check browser settings.');
+    closeNotificationsModal();
+    return;
   }
+  if ('serviceWorker' in navigator && 'PushManager' in window) {
+    try {
+      dbg('[NOTIFY] fetching vapid key');
+      const vapidRes = await api('/push/vapid-key?_=' + Date.now());
+      dbg('[NOTIFY] vapid key ok:', vapidRes.public_key?.slice(0, 20));
+      const keyBytes = _urlBase64ToUint8Array(vapidRes.public_key);
+      const reg = await navigator.serviceWorker.ready;
+      dbg('[NOTIFY] sw ready');
+      let sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
+      dbg('[NOTIFY] push manager subscribed');
+      const subJson = sub.toJSON();
+      const postRes = await fetch(API + '/push/subscribe', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
+      });
+      dbg('[NOTIFY] subscribe POST', postRes.status);
+      _pushSubscribed = true;
+      dbg('[NOTIFY] push subscribed');
+    } catch (e) {
+      dbg('[NOTIFY] push subscribe failed', e);
+    }
+  }
+  showToast('Notifications enabled');
   closeNotificationsModal();
 }
 
-function disableNotifications() {
-  dbg('[NOTIFY] disableNotifications');
-  showToast('Disable notifications in browser settings');
+async function _disableAllNotifications() {
+  dbg('[NOTIFY] disableAllNotifications');
+  if ('serviceWorker' in navigator && 'PushManager' in window) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        await fetch(API + '/push/subscribe', {
+          method: 'DELETE', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint }),
+        });
+        dbg('[NOTIFY] push unsubscribed');
+      }
+    } catch (e) {
+      dbg('[NOTIFY] push unsubscribe failed', e);
+    }
+  }
+  _pushSubscribed = false;
+  showToast('Notifications disabled. Disable in-app alerts in browser settings.');
   closeNotificationsModal();
 }
 
@@ -2785,6 +2901,7 @@ async function route() {
   if (_routing) { dbg('route: skip (already routing)'); return; }
   _routing = true;
   try {
+  dbg('route:', location.href);
   const path = location.pathname;
   const pathRoom = path.match(/\/chat\/r\/(.+)/)?.[1] || null;
   const pathDm = path.match(/\/chat\/d\/(.+)/)?.[1] || null;
@@ -2798,6 +2915,7 @@ async function route() {
   const authed = await checkAuth();
   if (!authed) { renderAuth(); return; }
   if (!currentUser.username || !currentUser.country || !currentUser.avatar_url) { renderProfilePrompt(); return; }
+  await _checkPushStatus();
   if (!ws || ws.readyState !== 1) await connectWS();
   await loadRooms();
 
@@ -2850,7 +2968,16 @@ window.addEventListener('hashchange', route);
 window.addEventListener('resize', () => { isMobile = window.innerWidth < 768; });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _hiddenUnread > 0) {
+    dbg('[NOTIFY] tab visible, clearing', _hiddenUnread, 'hidden unread');
+    _hiddenUnread = 0;
+    _updateTitleBadge();
+    if (currentRoom && ws && ws.readyState === 1) wsSend('mark_read', { room_id: currentRoom });
+  }
+});
 route();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>

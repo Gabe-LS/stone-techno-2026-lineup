@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -42,6 +43,8 @@ from chat_db import (
     mark_room_read,
     get_user_memberships,
     get_unread_counts,
+    get_push_subscriptions,
+    delete_push_subscription_by_endpoint,
 )
 from chat_moderation import moderate_message
 
@@ -77,6 +80,98 @@ def _video_mod_frames(rel_url: str) -> list[str]:
             except Exception:
                 pass
     return uris
+
+
+def _get_room_notification_targets(db, room_id: str, sender_id: str) -> list[str]:
+    room = get_room(db, room_id)
+    if not room:
+        return []
+    room_type = room["type"]
+    if room_type == "dm":
+        rows = db.execute(
+            "SELECT user_id FROM dm_participants WHERE room_id = ? AND user_id != ?",
+            (room_id, sender_id),
+        ).fetchall()
+        return [
+            r["user_id"] for r in rows if not is_blocked(db, r["user_id"], sender_id)
+        ]
+    elif room_type == "meetup":
+        rows = db.execute(
+            "SELECT user_id FROM meetup_attendees WHERE meetup_id = ? AND user_id != ?",
+            (room_id, sender_id),
+        ).fetchall()
+        return [r["user_id"] for r in rows]
+    else:
+        rows = db.execute(
+            "SELECT user_id FROM room_memberships WHERE room_id = ? AND user_id != ?",
+            (room_id, sender_id),
+        ).fetchall()
+        return [r["user_id"] for r in rows]
+
+
+async def _send_chat_push(
+    db,
+    user_id: str,
+    room_id: str,
+    room_type: str,
+    room_name: str,
+    sender_name: str,
+    text_preview: str,
+) -> None:
+    subs = get_push_subscriptions(db, user_id)
+    if not subs:
+        return
+    vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
+    if not vapid_private_key:
+        return
+    if room_type == "dm":
+        title = sender_name
+        body = text_preview[:100]
+    elif room_type == "meetup":
+        title = room_name
+        body = f"{sender_name}: {text_preview[:80]}"
+    else:
+        title = f"#{room_name}"
+        body = f"{sender_name}: {text_preview[:80]}"
+    payload = json.dumps(
+        {
+            "title": title,
+            "body": body,
+            "tag": f"chat-{room_id}",
+            "url": f"/chat/r/{room_id}",
+        }
+    )
+    vapid_claims = {
+        "sub": os.environ.get("VAPID_CLAIMS_EMAIL", "mailto:noreply@example.com")
+    }
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        logger.warning("pywebpush not installed, skipping chat push")
+        return
+    for sub in subs:
+        try:
+            await asyncio.to_thread(
+                webpush,
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+                },
+                data=payload,
+                vapid_private_key=vapid_private_key,
+                vapid_claims=vapid_claims,
+            )
+        except WebPushException as e:
+            if (
+                hasattr(e, "response")
+                and e.response is not None
+                and e.response.status_code in (404, 410)
+            ):
+                delete_push_subscription_by_endpoint(db, sub["endpoint"])
+            else:
+                logger.warning("Chat push failed for %s: %s", sub["endpoint"][:60], e)
+        except Exception:
+            logger.exception("Unexpected push error")
 
 
 class ChatRoom:
@@ -277,6 +372,9 @@ async def _moderate_and_broadcast(
     room_id,
     user_id,
     display_name,
+    username,
+    color_index,
+    avatar_url,
     msg,
     msg_type,
     content,
@@ -337,6 +435,18 @@ async def _moderate_and_broadcast(
             event_data["reply_to"] = reply_snippet
         await mgr.broadcast_to_room(room_id, event_data, exclude=user_id)
 
+        text_preview = ""
+        if msg_type == "text":
+            text_preview = (text or "")[:100]
+        elif msg_type == "image":
+            text_preview = "Sent a photo"
+        elif msg_type == "video":
+            text_preview = "Sent a video"
+        elif msg_type == "location":
+            text_preview = "Shared a location"
+        elif msg_type == "meetup_card":
+            text_preview = "Shared a meetup"
+
         room_obj = mgr.rooms.get(room_id)
         active_viewers = set(room_obj.connections.keys()) if room_obj else set()
         meta = mgr._room_meta.get(room_id, {"type": "general", "name": ""})
@@ -353,7 +463,27 @@ async def _moderate_and_broadcast(
                     "count": unread[room_id],
                     "type": meta.get("type", "general"),
                     "name": meta.get("name", ""),
+                    "sender_name": display_name,
+                    "preview": text_preview,
                 },
+            )
+
+        connected_uids = set(mgr.user_ws.keys())
+        all_targets = _get_room_notification_targets(db, room_id, user_id)
+        offline_targets = [uid for uid in all_targets if uid not in connected_uids]
+        room_type = meta.get("type", "general")
+        room_name = meta.get("name", "")
+        for uid in offline_targets:
+            asyncio.create_task(
+                _send_chat_push(
+                    db,
+                    uid,
+                    room_id,
+                    room_type,
+                    room_name,
+                    display_name,
+                    text_preview,
+                )
             )
 
     except Exception:
@@ -565,6 +695,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         room_id,
                         user_id,
                         display_name,
+                        username,
+                        color_index,
+                        avatar_url,
                         msg,
                         msg_type,
                         content,

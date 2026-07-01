@@ -169,6 +169,16 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_strikes_user ON strikes(user_id);
+
+        CREATE TABLE IF NOT EXISTS chat_push_subscriptions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            endpoint   TEXT NOT NULL UNIQUE,
+            p256dh     TEXT NOT NULL,
+            auth       TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
     """)
     db.commit()
 
@@ -836,6 +846,7 @@ def purge_expired_sessions(db: sqlite3.Connection) -> None:
 
 def wipe_all_chat_data(db: sqlite3.Connection) -> None:
     for table in (
+        "chat_push_subscriptions",
         "strikes",
         "reports",
         "blocks",
@@ -858,3 +869,49 @@ def wipe_all_chat_data(db: sqlite3.Connection) -> None:
 
 def hash_email(email: str) -> str:
     return hashlib.sha256(email.strip().lower().encode()).hexdigest()
+
+
+# --- Push subscriptions ---
+
+
+def save_push_subscription(
+    db: sqlite3.Connection, user_id: str, endpoint: str, p256dh: str, auth: str
+) -> None:
+    db.execute(
+        """INSERT INTO chat_push_subscriptions (user_id, endpoint, p256dh, auth, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,
+               p256dh=excluded.p256dh, auth=excluded.auth, created_at=excluded.created_at""",
+        (user_id, endpoint, p256dh, auth, _now()),
+    )
+    db.commit()
+
+
+def delete_push_subscription(
+    db: sqlite3.Connection, user_id: str, endpoint: str
+) -> None:
+    db.execute(
+        "DELETE FROM chat_push_subscriptions WHERE user_id = ? AND endpoint = ?",
+        (user_id, endpoint),
+    )
+    db.commit()
+
+
+def delete_push_subscription_by_endpoint(db: sqlite3.Connection, endpoint: str) -> None:
+    db.execute("DELETE FROM chat_push_subscriptions WHERE endpoint = ?", (endpoint,))
+    db.commit()
+
+
+def get_push_subscriptions(db: sqlite3.Connection, user_id: str) -> list[sqlite3.Row]:
+    return db.execute(
+        "SELECT endpoint, p256dh, auth FROM chat_push_subscriptions WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+
+
+def get_push_subscription_count(db: sqlite3.Connection, user_id: str) -> int:
+    row = db.execute(
+        "SELECT COUNT(*) FROM chat_push_subscriptions WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    return row[0]

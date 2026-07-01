@@ -6,6 +6,7 @@ self.addEventListener('push', function (event) {
     icon: '/favicon.png',
     badge: '/favicon.png',
     tag: data.tag || 'stc-notification',
+    renotify: !!data.tag,
     data: { url: data.url || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
