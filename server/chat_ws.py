@@ -108,6 +108,7 @@ class ConnectionManager:
         self.user_rooms: dict[str, set[str]] = {}
         self.user_ws: dict[str, WebSocket] = {}
         self._rate_buckets: dict[str, list[float]] = {}
+        self._recent_msgs: dict[str, list] = {}
 
     def _get_room(self, room_id: str) -> ChatRoom:
         if room_id not in self.rooms:
@@ -194,6 +195,18 @@ class ConnectionManager:
             return False
         bucket.append(now)
         return True
+
+    def check_duplicate(self, user_id: str, text: str, window_secs: int = 120) -> bool:
+        if len(text) <= 4:
+            return False
+        now = time.monotonic()
+        history = self._recent_msgs.get(user_id, [])
+        history[:] = [(t, msg) for t, msg in history if now - t < window_secs]
+        normalized = text.strip().lower()
+        is_dup = any(msg == normalized for _, msg in history[-3:])
+        history.append((now, normalized))
+        self._recent_msgs[user_id] = history
+        return is_dup
 
 
 manager = ConnectionManager()
@@ -412,6 +425,22 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         },
                     )
                     continue
+
+                if msg_type == "text":
+                    try:
+                        text_check = json.loads(content).get("text", "")
+                    except Exception:
+                        text_check = content
+                    if manager.check_duplicate(user_id, text_check):
+                        await manager.send_to_user(
+                            user_id,
+                            {
+                                "event": "message_rejected",
+                                "temp_id": temp_id,
+                                "reason": "Duplicate message.",
+                            },
+                        )
+                        continue
 
                 msg = create_message(
                     db, room_id, user_id, msg_type, content, reply_to_id=reply_to_id
