@@ -579,6 +579,8 @@ function onDisplayNameInput() {
   }, 400);
 }
 
+let _previewAvatarUrl = '';
+
 function updateProfilePreview() {
   const el = document.getElementById('preview-bubble');
   if (!el) return;
@@ -586,8 +588,11 @@ function updateProfilePreview() {
   const displayName = document.getElementById('displayname-input')?.value || '';
   const shown = displayName || username || 'username';
   const color = USER_COLORS[currentUser?.color_index || 0];
+  const avatarEl = _previewAvatarUrl
+    ? `<div class="avatar-sm"><img src="${_previewAvatarUrl}" style="width:100%;height:100%;border-radius:50%;object-fit:cover"></div>`
+    : `<div class="avatar-sm" style="background:${color.vivid}">${(shown[0] || '?').toUpperCase()}</div>`;
   el.innerHTML = `<div style="display:flex;gap:var(--space-sm);align-items:flex-end">
-    <div class="avatar-sm" style="background:${color.vivid}">${(shown[0] || '?').toUpperCase()}</div>
+    ${avatarEl}
     <div class="msg-bubble msg-other-bubble" style="background:${color.pastel};padding:var(--space-sm) var(--space-md) var(--space-lg);border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm);max-width:240px">
       <div class="msg-header" style="margin-bottom:2px">
         <span class="msg-name" style="color:${color.vivid}">${escapeHtml(shown)}</span>
@@ -790,16 +795,9 @@ async function updateAvatarPreview() {
     const canvas = new OffscreenCanvas(128, 128);
     canvas.getContext('bitmaprenderer').transferFromImageBitmap(bmp);
     const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
-    const url = URL.createObjectURL(blob);
-    const el = document.getElementById('preview-bubble');
-    if (el) {
-      const img = el.querySelector('.avatar-sm img');
-      if (img) { URL.revokeObjectURL(img.src); img.src = url; }
-      else {
-        const av = el.querySelector('.avatar-sm');
-        if (av) { av.innerHTML = `<img src="${url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`; }
-      }
-    }
+    if (_previewAvatarUrl) URL.revokeObjectURL(_previewAvatarUrl);
+    _previewAvatarUrl = URL.createObjectURL(blob);
+    updateProfilePreview();
   } catch {}
 }
 
@@ -924,7 +922,7 @@ function handleWSEvent(data) {
       const removedEl = document.querySelector(`[data-msg-id="${data.id}"]`);
       removedEl?.remove();
       verify('message_removed', !document.querySelector(`[data-msg-id="${data.id}"]`), 'message removed from DOM id=' + data.id);
-      showToast(data.reason || 'Message removed', 5000);
+      showToast(data.reason || 'Message removed');
       break;
     }
     case 'messages_expired':
@@ -951,9 +949,9 @@ function handleWSEvent(data) {
       updateSidebarCount(data.room_id);
       if (data.room_id === currentRoom) updateHeaderCount();
       break;
-    case 'message_rejected': showToast(data.reason, 5000); break;
-    case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`, 5000); break;
-    case 'banned': showToast('You have been banned: ' + data.reason, 5000); currentUser = null; renderAuth(); break;
+    case 'message_rejected': showToast(data.reason); break;
+    case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`); break;
+    case 'banned': showToast('You have been banned: ' + data.reason); currentUser = null; renderAuth(); break;
     case 'dm_opened': navigateTo('room/' + data.room_id); break;
     case 'report_confirmed': showToast('Report submitted'); break;
     case 'reaction_updated': {
@@ -1562,10 +1560,10 @@ function shareLocation() {
     },
     err => {
       dbg('shareLocation: error', err.code, err.message);
-      if (err.code === 1) showToast('Location access denied. Check browser permissions.', 5000);
-      else if (err.code === 2) showToast('Location unavailable', 5000);
-      else if (err.code === 3) showToast('Location request timed out', 5000);
-      else showToast('Could not get location', 5000);
+      if (err.code === 1) showToast('Location access denied. Check browser permissions.');
+      else if (err.code === 2) showToast('Location unavailable');
+      else if (err.code === 3) showToast('Location request timed out');
+      else showToast('Could not get location');
     },
     { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
   );
@@ -1876,7 +1874,7 @@ function uploadVideo() {
       showToast('Video shared');
     } catch (e) {
       dbg('[VIDEO] error:', e.message, e.stack);
-      showToast(e.message || 'Video upload failed', 5000);
+      showToast(e.message || 'Video upload failed');
     }
   };
   input.click();
