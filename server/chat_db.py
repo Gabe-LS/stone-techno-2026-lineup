@@ -83,6 +83,15 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS room_memberships (
+            user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            room_id      TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+            joined_at    TEXT NOT NULL,
+            last_read_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, room_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_memberships_user ON room_memberships(user_id);
+
         CREATE TABLE IF NOT EXISTS messages (
             id          TEXT PRIMARY KEY,
             room_id     TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -358,6 +367,61 @@ def get_rooms_by_event(db: sqlite3.Connection, event_id: str) -> list[sqlite3.Ro
         "SELECT * FROM rooms WHERE event_id = ? AND type IN ('stage', 'general') ORDER BY is_main DESC, name",
         (event_id,),
     ).fetchall()
+
+
+def join_room_membership(db: sqlite3.Connection, user_id: str, room_id: str) -> None:
+    now = _now()
+    db.execute(
+        "INSERT OR IGNORE INTO room_memberships (user_id, room_id, joined_at, last_read_at) "
+        "VALUES (?, ?, ?, ?)",
+        (user_id, room_id, now, now),
+    )
+    db.commit()
+
+
+def leave_room_membership(db: sqlite3.Connection, user_id: str, room_id: str) -> None:
+    db.execute(
+        "DELETE FROM room_memberships WHERE user_id = ? AND room_id = ?",
+        (user_id, room_id),
+    )
+    db.commit()
+
+
+def mark_room_read(db: sqlite3.Connection, user_id: str, room_id: str) -> None:
+    db.execute(
+        "UPDATE room_memberships SET last_read_at = ? WHERE user_id = ? AND room_id = ?",
+        (_now(), user_id, room_id),
+    )
+    db.commit()
+
+
+def get_user_memberships(db: sqlite3.Connection, user_id: str) -> list[sqlite3.Row]:
+    return db.execute(
+        "SELECT room_id FROM room_memberships WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+
+
+def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
+    now = _now()
+    rows = db.execute(
+        "SELECT rm.room_id, r.type, r.name, "
+        "COUNT(m.id) AS unread "
+        "FROM room_memberships rm "
+        "JOIN rooms r ON r.id = rm.room_id "
+        "LEFT JOIN messages m ON m.room_id = rm.room_id "
+        "  AND m.created_at > rm.last_read_at "
+        "  AND m.expires_at > ? "
+        "  AND m.user_id != ? "
+        "WHERE rm.user_id = ? "
+        "GROUP BY rm.room_id",
+        (now, user_id, user_id),
+    ).fetchall()
+    return {
+        r["room_id"]: {"count": r["unread"], "type": r["type"], "name": r["name"]}
+        for r in rows
+        if r["unread"] > 0
+    }
 
 
 def seed_event_room(db: sqlite3.Connection, event_id: str, event_name: str) -> None:

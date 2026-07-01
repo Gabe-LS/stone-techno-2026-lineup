@@ -17,6 +17,7 @@ from chat_db import (
     get_chat_db,
     get_user_by_token,
     get_room,
+    get_main_room,
     create_message,
     get_room_messages,
     get_reactions_for_messages,
@@ -36,6 +37,11 @@ from chat_db import (
     purge_expired_messages,
     purge_expired_meetups,
     purge_expired_sessions,
+    join_room_membership,
+    leave_room_membership,
+    mark_room_read,
+    get_user_memberships,
+    get_unread_counts,
 )
 from chat_moderation import moderate_message
 
@@ -108,6 +114,9 @@ class ConnectionManager:
         self.user_rooms: dict[str, set[str]] = {}
         self.user_ws: dict[str, WebSocket] = {}
         self._rate_buckets: dict[str, list[float]] = {}
+        self.user_badge_rooms: dict[str, set[str]] = {}
+        self.user_unread: dict[str, dict[str, int]] = {}
+        self._room_meta: dict[str, dict] = {}
         self._recent_msgs: dict[str, list] = {}
 
     def _get_room(self, room_id: str) -> ChatRoom:
@@ -328,6 +337,25 @@ async def _moderate_and_broadcast(
             event_data["reply_to"] = reply_snippet
         await mgr.broadcast_to_room(room_id, event_data, exclude=user_id)
 
+        room_obj = mgr.rooms.get(room_id)
+        active_viewers = set(room_obj.connections.keys()) if room_obj else set()
+        meta = mgr._room_meta.get(room_id, {"type": "general", "name": ""})
+        for uid, badge_rooms in list(mgr.user_badge_rooms.items()):
+            if room_id not in badge_rooms or uid in active_viewers or uid == user_id:
+                continue
+            unread = mgr.user_unread.setdefault(uid, {})
+            unread[room_id] = unread.get(room_id, 0) + 1
+            await mgr.send_to_user(
+                uid,
+                {
+                    "event": "badge_update",
+                    "room_id": room_id,
+                    "count": unread[room_id],
+                    "type": meta.get("type", "general"),
+                    "name": meta.get("name", ""),
+                },
+            )
+
     except Exception:
         logger.exception("Moderation task error for message %s", msg["id"])
         await mgr.broadcast_to_room(
@@ -368,6 +396,39 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
     await manager.connect(ws, user_id)
 
+    memberships = get_user_memberships(db, user_id)
+    manager.user_badge_rooms[user_id] = {m["room_id"] for m in memberships}
+    manager.user_unread[user_id] = {}
+
+    main_room = get_main_room(db, event_id)
+    if main_room:
+        join_room_membership(db, user_id, main_room["id"])
+        manager.user_badge_rooms[user_id].add(main_room["id"])
+        manager._room_meta[main_room["id"]] = {
+            "type": main_room["type"],
+            "name": main_room["name"],
+        }
+
+    counts = get_unread_counts(db, user_id)
+    if counts:
+        await manager.send_to_user(
+            user_id,
+            {
+                "event": "badge_counts",
+                "counts": [
+                    {
+                        "room_id": rid,
+                        "count": v["count"],
+                        "type": v["type"],
+                        "name": v["name"],
+                    }
+                    for rid, v in counts.items()
+                ],
+            },
+        )
+        for rid, v in counts.items():
+            manager.user_unread[user_id][rid] = v["count"]
+
     try:
         while True:
             raw = await ws.receive_text()
@@ -382,8 +443,15 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
             if event == "join_room":
                 room_id = data.get("room_id")
-                if room_id and get_room(db, room_id):
+                room_row = get_room(db, room_id) if room_id else None
+                if room_id and room_row:
                     await manager.join_room(room_id, user_id, display_name)
+                    join_room_membership(db, user_id, room_id)
+                    manager.user_badge_rooms.setdefault(user_id, set()).add(room_id)
+                    manager._room_meta[room_id] = {
+                        "type": room_row["type"],
+                        "name": room_row["name"],
+                    }
                     messages = get_room_messages(db, room_id, limit=50)
                     msg_ids = [m["id"] for m in messages]
                     reactions_map = get_reactions_for_messages(db, msg_ids)
@@ -405,6 +473,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if room_id:
                     await manager.leave_room(room_id, user_id)
 
+            elif event == "mark_read":
+                room_id = data.get("room_id")
+                if room_id:
+                    mark_room_read(db, user_id, room_id)
+                    if user_id in manager.user_unread:
+                        manager.user_unread[user_id].pop(room_id, None)
+
             elif event == "send_message":
                 room_id = data.get("room_id")
                 msg_type = data.get("type", "text")
@@ -414,6 +489,9 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
                 if not room_id or not content:
                     continue
+
+                join_room_membership(db, user_id, room_id)
+                manager.user_badge_rooms.setdefault(user_id, set()).add(room_id)
 
                 if not manager.check_rate_limit(user_id):
                     await manager.send_to_user(
