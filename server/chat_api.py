@@ -52,6 +52,7 @@ from chat_db import (
     save_push_subscription,
     delete_push_subscription,
     get_push_subscription_count,
+    leave_room_membership,
 )
 from chat_ws import handle_chat_ws, purge_loop
 
@@ -430,16 +431,54 @@ async def list_rooms(request: Request):
     db = _get_db()
     from chat_ws import manager
 
+    user_id = None
+    token = request.cookies.get("chat_session")
+    if token:
+        user = get_user_by_token(db, token)
+        if user:
+            user_id = user["id"]
+    member_rooms = set()
+    if user_id:
+        rows = db.execute(
+            "SELECT room_id FROM room_memberships WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        member_rooms = {r["room_id"] for r in rows}
     rooms = get_rooms_by_event(db, DEFAULT_EVENT_ID)
     return [
         {
             "id": r["id"],
             "type": r["type"],
             "name": r["name"],
+            "is_main": bool(r["is_main"]),
             "online_count": len(manager.get_online_users(r["id"])),
+            "is_member": r["id"] in member_rooms,
         }
         for r in rooms
     ]
+
+
+@router.post("/rooms/{room_id}/join", status_code=204)
+async def join_room_endpoint(room_id: str, request: Request):
+    user, db = _get_user_from_cookie(request)
+    room = get_room(db, room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    from chat_db import join_room_membership
+
+    join_room_membership(db, user["id"], room_id)
+    return Response(status_code=204)
+
+
+@router.delete("/rooms/{room_id}/join", status_code=204)
+async def leave_room_endpoint(room_id: str, request: Request):
+    user, db = _get_user_from_cookie(request)
+    room = get_room(db, room_id)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if room["is_main"]:
+        raise HTTPException(400, "Cannot leave main room")
+    leave_room_membership(db, user["id"], room_id)
+    return Response(status_code=204)
 
 
 @router.get("/rooms/{room_id}/messages")
@@ -500,13 +539,15 @@ async def room_online(room_id: str):
 
 @router.get("/meetups")
 async def list_meetups(request: Request, stage_id: str | None = None):
-    db = _get_db()
+    user, db = _get_user_from_cookie(request)
+    user_id = user["id"]
     meetups = get_active_meetups(db, DEFAULT_EVENT_ID)
     result = []
     for m in meetups:
         if stage_id and m["stage_id"] != stage_id:
             continue
         attendees = get_meetup_attendees(db, m["id"])
+        att_ids = {a["id"] for a in attendees}
         result.append(
             {
                 "id": m["id"],
@@ -518,6 +559,7 @@ async def list_meetups(request: Request, stage_id: str | None = None):
                 "note": m["note"],
                 "stage_id": m["stage_id"],
                 "attendee_count": m["attendee_count"],
+                "is_going": user_id in att_ids,
                 "attendees": [
                     {"id": a["id"], "display_name": a["display_name"]}
                     for a in attendees

@@ -530,7 +530,21 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     await manager.connect(ws, user_id)
 
     memberships = get_user_memberships(db, user_id)
-    manager.user_badge_rooms[user_id] = {m["room_id"] for m in memberships}
+    dm_rooms = db.execute(
+        "SELECT room_id FROM dm_participants WHERE user_id = ?", (user_id,)
+    ).fetchall()
+    manager.user_badge_rooms[user_id] = {m["room_id"] for m in memberships} | {
+        d["room_id"] for d in dm_rooms
+    }
+    for d in dm_rooms:
+        other = db.execute(
+            "SELECT u.display_name FROM dm_participants dp "
+            "JOIN users u ON u.id = dp.user_id "
+            "WHERE dp.room_id = ? AND dp.user_id != ?",
+            (d["room_id"], user_id),
+        ).fetchone()
+        dm_name = other["display_name"] if other else ""
+        manager._room_meta[d["room_id"]] = {"type": "dm", "name": dm_name}
     manager.user_unread[user_id] = {}
 
     main_room = get_main_room(db, event_id)
@@ -579,8 +593,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 room_row = get_room(db, room_id) if room_id else None
                 if room_id and room_row:
                     await manager.join_room(room_id, user_id, display_name)
-                    join_room_membership(db, user_id, room_id)
-                    manager.user_badge_rooms.setdefault(user_id, set()).add(room_id)
+                    is_member = db.execute(
+                        "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
+                        (user_id, room_id),
+                    ).fetchone()
+                    if is_member:
+                        manager.user_badge_rooms.setdefault(user_id, set()).add(room_id)
                     manager._room_meta[room_id] = {
                         "type": room_row["type"],
                         "name": room_row["name"],

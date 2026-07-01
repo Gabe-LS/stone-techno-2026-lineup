@@ -415,17 +415,23 @@ def get_user_memberships(db: sqlite3.Connection, user_id: str) -> list[sqlite3.R
 def get_unread_counts(db: sqlite3.Connection, user_id: str) -> dict:
     now = _now()
     rows = db.execute(
-        "SELECT rm.room_id, r.type, r.name, "
+        "SELECT src.room_id, r.type, r.name, "
         "COUNT(m.id) AS unread "
-        "FROM room_memberships rm "
-        "JOIN rooms r ON r.id = rm.room_id "
-        "LEFT JOIN messages m ON m.room_id = rm.room_id "
-        "  AND m.created_at > rm.last_read_at "
+        "FROM ("
+        "  SELECT room_id, last_read_at FROM room_memberships WHERE user_id = ? "
+        "  UNION "
+        "  SELECT dp.room_id, COALESCE(rm.last_read_at, '1970-01-01') "
+        "  FROM dm_participants dp "
+        "  LEFT JOIN room_memberships rm ON rm.user_id = dp.user_id AND rm.room_id = dp.room_id "
+        "  WHERE dp.user_id = ? "
+        ") src "
+        "JOIN rooms r ON r.id = src.room_id "
+        "LEFT JOIN messages m ON m.room_id = src.room_id "
+        "  AND m.created_at > src.last_read_at "
         "  AND m.expires_at > ? "
         "  AND m.user_id != ? "
-        "WHERE rm.user_id = ? "
-        "GROUP BY rm.room_id",
-        (now, user_id, user_id),
+        "GROUP BY src.room_id",
+        (user_id, user_id, now, user_id),
     ).fetchall()
     return {
         r["room_id"]: {"count": r["unread"], "type": r["type"], "name": r["name"]}
