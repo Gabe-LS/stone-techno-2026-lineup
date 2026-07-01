@@ -140,6 +140,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .msg-card.card-meetup { background: var(--user-1-bg); box-shadow: inset 0 0 0 1px var(--color-accent); }
 .meetup-join { display: inline-block; padding: var(--space-xs) var(--space-md); border: 1px solid var(--color-accent); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: 600; cursor: pointer; background: none; color: var(--color-accent); font-family: inherit; margin-top: var(--space-sm); }
 .meetup-join.joined { background: var(--color-accent); color: #fff; }
+.meetup-join-wide { width: 260px; display: block; margin-top: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); font-size: var(--font-sm); }
 .msg-card.card-location { background: var(--user-5-bg); box-shadow: inset 0 0 0 1px var(--color-success); }
 .msg-card.card-location .card-label { color: var(--color-success); }
 
@@ -1290,15 +1291,16 @@ function renderMessage(m) {
       </a>`;
     } else if (m.type === 'meetup_invite') {
       const mid = c.meetup_id;
+      const isCreator = m.user_id === currentUser?.id;
       contentHtml = `<div class="msg-card card-meetup" style="display:flex;gap:10px;align-items:flex-start" data-meetup-id="${mid}">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;color:var(--color-accent);margin-top:2px"><path d="M2 12C2 8.22876 2 6.34315 3.17157 5.17157C4.34315 4 6.22876 4 10 4H14C17.7712 4 19.6569 4 20.8284 5.17157C22 6.34315 22 8.22876 22 12V14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22H10C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14V12Z" stroke="currentColor" stroke-width="1.5"/><path d="M7 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M17 4V2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="16.5" cy="16.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 9H21.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         <div style="min-width:0;flex:1">
           <div class="card-label">MEETUP</div>
           <div class="card-title">${escapeHtml(c.title)}</div>
           <div class="card-meta">${fmtTime(c.meetup_time)}</div>
-          <button class="meetup-join" data-meetup-id="${mid}" onclick="event.stopPropagation();toggleMeetupJoin('${mid}',this)">Join</button>
         </div>
-      </div>`;
+      </div>
+      ${isCreator ? '' : '<button class="meetup-join meetup-join-wide" data-meetup-id="' + mid + '" onclick="event.stopPropagation();toggleMeetupJoin(\'' + mid + '\',this)">Join</button>'}`;
       setTimeout(() => loadMeetupJoinState(mid), 0);
     }
   } catch {
