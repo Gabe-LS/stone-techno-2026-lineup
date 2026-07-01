@@ -1128,7 +1128,7 @@ async function openRoom(roomId, roomName, roomType) {
     renderRoomList();
   }
   renderChatView(roomName);
-  if (rooms.length > 1) location.hash = 'r/' + roomId;
+  if (rooms.length > 1) history.replaceState(null, '', '/chat/r/' + roomId);
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
   if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });
@@ -1577,7 +1577,7 @@ function leaveRoom() {
   currentRoom = null;
   currentRoomName = null;
   currentRoomType = null;
-  location.hash = '';
+  history.replaceState(null, '', '/chat');
   renderRoomList();
   verify('leaveRoom', !currentRoom, 'currentRoom cleared');
 }
@@ -2660,10 +2660,14 @@ async function route() {
   if (_routing) { dbg('route: skip (already routing)'); return; }
   _routing = true;
   try {
-  const hash = location.hash.slice(1);
-  dbg('route:', hash || '(none)');
+  const path = location.pathname;
+  const pathRoom = path.match(/\/chat\/r\/(.+)/)?.[1] || null;
+  const pathDm = path.match(/\/chat\/d\/(.+)/)?.[1] || null;
+  const pathMeetup = path.match(/\/chat\/m\/(.+)/)?.[1] || null;
+  const targetRoom = pathRoom || null;
+  dbg('route:', pathRoom ? 'room=' + pathRoom : pathDm ? 'dm=' + pathDm : pathMeetup ? 'meetup=' + pathMeetup : '(main)');
 
-  if (hash.startsWith('r/') && currentRoom === hash.slice(2) && currentRoomName) return;
+  if (targetRoom && currentRoom === targetRoom && currentRoomName) return;
 
   const authed = await checkAuth();
   if (!authed) { renderAuth(); return; }
@@ -2671,8 +2675,8 @@ async function route() {
   if (!ws || ws.readyState !== 1) await connectWS();
   await loadRooms();
 
-  if (hash.startsWith('r/')) {
-    const roomId = hash.slice(2);
+  if (targetRoom) {
+    const roomId = targetRoom;
     const room = rooms.find(r => r.id === roomId);
     let roomName = room ? room.name : currentRoomName || null;
     let roomType = room ? room.type : currentRoomType || 'stage';

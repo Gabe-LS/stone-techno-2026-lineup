@@ -231,7 +231,7 @@ async def auth_email_start(request: Request):
             base_url = os.environ.get(
                 "CHAT_BASE_URL", "https://stonetechno.deftlab.dev"
             )
-            verify_url = f"{base_url}/chat/api/verify?token={token}"
+            verify_url = f"{base_url}/chat/v/{token}"
             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
             client.send_basic_email(
                 {
@@ -939,9 +939,16 @@ def mount_chat(app):
     async def chat_websocket(websocket: WebSocket, token: str):
         await handle_chat_ws(websocket, token, DEFAULT_EVENT_ID)
 
+    @app.get("/chat/v/{token}")
+    async def verify_via_path(request: Request, token: str):
+        return await auth_email_verify(request, token)
+
     @app.get("/chat", response_class=HTMLResponse)
     @app.get("/chat/", response_class=HTMLResponse)
-    async def serve_chat():
+    @app.get("/chat/r/{room_id}", response_class=HTMLResponse)
+    @app.get("/chat/d/{username}", response_class=HTMLResponse)
+    @app.get("/chat/m/{meetup_id}", response_class=HTMLResponse)
+    async def serve_chat(room_id: str = "", username: str = "", meetup_id: str = ""):
         chat_html = CHAT_DIR / "chat.html"
         if chat_html.exists():
             return HTMLResponse(chat_html.read_text(encoding="utf-8"))

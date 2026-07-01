@@ -79,6 +79,7 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             event_id   TEXT NOT NULL,
             type       TEXT NOT NULL,
             name       TEXT NOT NULL,
+            is_main    INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
 
@@ -329,12 +330,13 @@ def create_room(
     event_id: str,
     room_type: str,
     name: str,
+    is_main: bool = False,
 ) -> dict:
     now = _now()
     db.execute(
-        "INSERT OR IGNORE INTO rooms (id, event_id, type, name, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (room_id, event_id, room_type, name, now),
+        "INSERT OR IGNORE INTO rooms (id, event_id, type, name, is_main, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (room_id, event_id, room_type, name, 1 if is_main else 0, now),
     )
     db.commit()
     return {"id": room_id, "event_id": event_id, "type": room_type, "name": name}
@@ -344,15 +346,22 @@ def get_room(db: sqlite3.Connection, room_id: str) -> sqlite3.Row | None:
     return db.execute("SELECT * FROM rooms WHERE id = ?", (room_id,)).fetchone()
 
 
+def get_main_room(db: sqlite3.Connection, event_id: str) -> sqlite3.Row | None:
+    return db.execute(
+        "SELECT * FROM rooms WHERE event_id = ? AND is_main = 1 LIMIT 1",
+        (event_id,),
+    ).fetchone()
+
+
 def get_rooms_by_event(db: sqlite3.Connection, event_id: str) -> list[sqlite3.Row]:
     return db.execute(
-        "SELECT * FROM rooms WHERE event_id = ? AND type IN ('stage', 'general') ORDER BY name",
+        "SELECT * FROM rooms WHERE event_id = ? AND type IN ('stage', 'general') ORDER BY is_main DESC, name",
         (event_id,),
     ).fetchall()
 
 
 def seed_event_room(db: sqlite3.Connection, event_id: str, event_name: str) -> None:
-    create_room(db, f"{event_id}:general", event_id, "general", event_name)
+    create_room(db, "general", event_id, "general", event_name, is_main=True)
 
 
 # --- Messages ---
