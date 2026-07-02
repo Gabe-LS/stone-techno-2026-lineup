@@ -110,8 +110,8 @@ class TestConnectionManager:
     @pytest.mark.asyncio
     async def test_connect_and_join(self, mgr):
         ws = FakeWebSocket()
-        await mgr.connect(ws, "user-1")
-        await mgr.join_room("room-1", "user-1", "Alice")
+        await mgr.connect(ws, "user-1", "c1")
+        await mgr.join_room("room-1", "user-1", "c1", "Alice")
         online = mgr.get_online_users("room-1")
         assert len(online) == 1
         assert online[0]["display_name"] == "Alice"
@@ -119,9 +119,9 @@ class TestConnectionManager:
     @pytest.mark.asyncio
     async def test_disconnect_leaves_rooms(self, mgr):
         ws = FakeWebSocket()
-        await mgr.connect(ws, "user-1")
-        await mgr.join_room("room-1", "user-1", "Alice")
-        left = mgr.disconnect("user-1")
+        await mgr.connect(ws, "user-1", "c1")
+        await mgr.join_room("room-1", "user-1", "c1", "Alice")
+        _, left = mgr.disconnect("c1")
         assert "room-1" in left
         assert mgr.get_online_users("room-1") == []
 
@@ -129,10 +129,10 @@ class TestConnectionManager:
     async def test_broadcast_to_room(self, mgr):
         ws1 = FakeWebSocket()
         ws2 = FakeWebSocket()
-        await mgr.connect(ws1, "u1")
-        await mgr.connect(ws2, "u2")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.join_room("r1", "u2", "B")
+        await mgr.connect(ws1, "u1", "c1")
+        await mgr.connect(ws2, "u2", "c2")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.join_room("r1", "u2", "c2", "B")
         await mgr.broadcast_to_room("r1", {"event": "test", "data": "hello"})
         assert len(ws1.sent) >= 1
         assert len(ws2.sent) >= 1
@@ -141,19 +141,19 @@ class TestConnectionManager:
     async def test_broadcast_excludes_sender(self, mgr):
         ws1 = FakeWebSocket()
         ws2 = FakeWebSocket()
-        await mgr.connect(ws1, "u1")
-        await mgr.connect(ws2, "u2")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.join_room("r1", "u2", "B")
+        await mgr.connect(ws1, "u1", "c1")
+        await mgr.connect(ws2, "u2", "c2")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.join_room("r1", "u2", "c2", "B")
         presence_count = len(ws1.sent)
-        await mgr.broadcast_to_room("r1", {"event": "test"}, exclude="u1")
+        await mgr.broadcast_to_room("r1", {"event": "test"}, exclude_conn="c1")
         assert len(ws1.sent) == presence_count
         assert len(ws2.get_events_by_type("test")) == 1
 
     @pytest.mark.asyncio
     async def test_send_to_user(self, mgr):
         ws = FakeWebSocket()
-        await mgr.connect(ws, "u1")
+        await mgr.connect(ws, "u1", "c1")
         await mgr.send_to_user("u1", {"event": "hello"})
         assert ws.get_events_by_type("hello")
 
@@ -166,20 +166,20 @@ class TestConnectionManager:
     @pytest.mark.asyncio
     async def test_leave_room(self, mgr):
         ws = FakeWebSocket()
-        await mgr.connect(ws, "u1")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.leave_room("r1", "u1")
+        await mgr.connect(ws, "u1", "c1")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.leave_room("r1", "c1")
         assert mgr.get_online_users("r1") == []
 
     @pytest.mark.asyncio
     async def test_multiple_rooms(self, mgr):
         ws = FakeWebSocket()
-        await mgr.connect(ws, "u1")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.join_room("r2", "u1", "A")
+        await mgr.connect(ws, "u1", "c1")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.join_room("r2", "u1", "c1", "A")
         assert len(mgr.get_online_users("r1")) == 1
         assert len(mgr.get_online_users("r2")) == 1
-        left = mgr.disconnect("u1")
+        _, left = mgr.disconnect("c1")
         assert "r1" in left and "r2" in left
 
 
@@ -195,10 +195,10 @@ class TestMessageFlow:
         ws2 = FakeWebSocket()
 
         mgr = ConnectionManager()
-        await mgr.connect(ws1, user1["id"])
-        await mgr.connect(ws2, user2["id"])
-        await mgr.join_room("grand-hall", user1["id"], "Alice")
-        await mgr.join_room("grand-hall", user2["id"], "Bob")
+        await mgr.connect(ws1, user1["id"], "c1")
+        await mgr.connect(ws2, user2["id"], "c2")
+        await mgr.join_room("grand-hall", user1["id"], "c1", "Alice")
+        await mgr.join_room("grand-hall", user2["id"], "c2", "Bob")
 
         content = json.dumps({"text": "hello everyone"})
         msg = create_message(db, "grand-hall", user1["id"], "text", content)
@@ -237,10 +237,10 @@ class TestMessageFlow:
         mgr = ConnectionManager()
         ws1 = FakeWebSocket()
         ws2 = FakeWebSocket()
-        await mgr.connect(ws1, "u1")
-        await mgr.connect(ws2, "u2")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.join_room("r1", "u2", "B")
+        await mgr.connect(ws1, "u1", "c1")
+        await mgr.connect(ws2, "u2", "c2")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.join_room("r1", "u2", "c2", "B")
 
         await mgr.broadcast_to_room(
             "r1",
@@ -250,7 +250,7 @@ class TestMessageFlow:
                 "user_id": "u1",
                 "active": True,
             },
-            exclude="u1",
+            exclude_conn="c1",
         )
 
         typing_events = ws2.get_events_by_type("typing")
@@ -268,10 +268,10 @@ class TestPresence:
         mgr = ConnectionManager()
         ws1 = FakeWebSocket()
         ws2 = FakeWebSocket()
-        await mgr.connect(ws1, "u1")
-        await mgr.connect(ws2, "u2")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.join_room("r1", "u2", "B")
+        await mgr.connect(ws1, "u1", "c1")
+        await mgr.connect(ws2, "u2", "c2")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.join_room("r1", "u2", "c2", "B")
 
         presence = ws1.get_events_by_type("presence")
         assert len(presence) == 1
@@ -283,12 +283,12 @@ class TestPresence:
         mgr = ConnectionManager()
         ws1 = FakeWebSocket()
         ws2 = FakeWebSocket()
-        await mgr.connect(ws1, "u1")
-        await mgr.connect(ws2, "u2")
-        await mgr.join_room("r1", "u1", "A")
-        await mgr.join_room("r1", "u2", "B")
+        await mgr.connect(ws1, "u1", "c1")
+        await mgr.connect(ws2, "u2", "c2")
+        await mgr.join_room("r1", "u1", "c1", "A")
+        await mgr.join_room("r1", "u2", "c2", "B")
 
-        await mgr.leave_room("r1", "u2")
+        await mgr.leave_room("r1", "c2")
 
         offline = [e for e in ws1.get_events_by_type("presence") if not e["online"]]
         assert len(offline) == 1
@@ -317,11 +317,11 @@ class TestModerationInFlow:
         mgr = ConnectionManager()
         ws1 = FakeWebSocket()
         ws2 = FakeWebSocket()
-        await mgr.connect(ws1, user1["id"])
+        await mgr.connect(ws1, user1["id"], "c1")
         u2 = create_user(db, "apple", "a-2", "Bob", "fp-2")
-        await mgr.connect(ws2, u2["id"])
-        await mgr.join_room("grand-hall", user1["id"], "Alice")
-        await mgr.join_room("grand-hall", u2["id"], "Bob")
+        await mgr.connect(ws2, u2["id"], "c2")
+        await mgr.join_room("grand-hall", user1["id"], "c1", "Alice")
+        await mgr.join_room("grand-hall", u2["id"], "c2", "Bob")
 
         with patch(
             "chat_moderation.check_openai_moderation",
@@ -337,8 +337,8 @@ class TestModerationInFlow:
     async def test_clean_message_stored_and_broadcast(self, db, user1, stage_room):
         mgr = ConnectionManager()
         ws = FakeWebSocket()
-        await mgr.connect(ws, user1["id"])
-        await mgr.join_room("grand-hall", user1["id"], "Alice")
+        await mgr.connect(ws, user1["id"], "c1")
+        await mgr.join_room("grand-hall", user1["id"], "c1", "Alice")
 
         with patch(
             "chat_moderation.check_openai_moderation",
@@ -376,8 +376,8 @@ class TestPurgeNotifications:
     async def test_expired_messages_notified(self, db, user1, stage_room):
         mgr = ConnectionManager()
         ws = FakeWebSocket()
-        await mgr.connect(ws, user1["id"])
-        await mgr.join_room("grand-hall", user1["id"], "Alice")
+        await mgr.connect(ws, user1["id"], "c1")
+        await mgr.join_room("grand-hall", user1["id"], "c1", "Alice")
 
         msg = create_message(
             db, "grand-hall", user1["id"], "text", '{"text":"bye"}', ttl_minutes=0

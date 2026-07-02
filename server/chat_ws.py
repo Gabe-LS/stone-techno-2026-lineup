@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -304,37 +305,32 @@ async def _send_chat_push(
 class ChatRoom:
     def __init__(self):
         self.connections: dict[str, WebSocket] = {}
+        self.conn_users: dict[str, str] = {}
         self.user_names: dict[str, str] = {}
 
-    async def broadcast(self, event: dict, exclude: str | None = None) -> None:
+    async def broadcast(self, event: dict, exclude_conn: str | None = None) -> None:
         payload = json.dumps(event)
         disconnected = []
-        for user_id, ws in self.connections.items():
-            if user_id == exclude:
+        for conn_id, ws in self.connections.items():
+            if conn_id == exclude_conn:
                 continue
             try:
                 await ws.send_text(payload)
             except Exception:
-                disconnected.append(user_id)
-        for uid in disconnected:
-            self.connections.pop(uid, None)
-            self.user_names.pop(uid, None)
-
-    async def send_to(self, user_id: str, event: dict) -> None:
-        ws = self.connections.get(user_id)
-        if ws:
-            try:
-                await ws.send_text(json.dumps(event))
-            except Exception:
-                self.connections.pop(user_id, None)
-                self.user_names.pop(user_id, None)
+                disconnected.append(conn_id)
+        for cid in disconnected:
+            uid = self.conn_users.pop(cid, None)
+            self.connections.pop(cid, None)
+            if uid and not any(u == uid for u in self.conn_users.values()):
+                self.user_names.pop(uid, None)
 
 
 class ConnectionManager:
     def __init__(self):
         self.rooms: dict[str, ChatRoom] = {}
+        self.user_conns: dict[str, dict[str, WebSocket]] = {}
+        self.conn_user: dict[str, str] = {}
         self.user_rooms: dict[str, set[str]] = {}
-        self.user_ws: dict[str, WebSocket] = {}
         self._rate_buckets: dict[str, list[float]] = {}
         self.user_badge_rooms: dict[str, set[str]] = {}
         self.user_unread: dict[str, dict[str, int]] = {}
@@ -346,39 +342,68 @@ class ConnectionManager:
             self.rooms[room_id] = ChatRoom()
         return self.rooms[room_id]
 
-    async def connect(self, ws: WebSocket, user_id: str) -> None:
-        self.user_ws[user_id] = ws
+    async def connect(self, ws: WebSocket, user_id: str, conn_id: str) -> None:
+        self.user_conns.setdefault(user_id, {})[conn_id] = ws
+        self.conn_user[conn_id] = user_id
         self.user_rooms.setdefault(user_id, set())
 
-    def disconnect(self, user_id: str) -> set[str]:
-        rooms = self.user_rooms.pop(user_id, set())
-        self.user_ws.pop(user_id, None)
-        for room_id in rooms:
+    def disconnect(self, conn_id: str) -> tuple[str | None, set[str]]:
+        user_id = self.conn_user.pop(conn_id, None)
+        if not user_id:
+            return None, set()
+        conns = self.user_conns.get(user_id, {})
+        conns.pop(conn_id, None)
+        for room_id in list(self.user_rooms.get(user_id, set())):
             room = self.rooms.get(room_id)
             if room:
-                room.connections.pop(user_id, None)
-                room.user_names.pop(user_id, None)
-        return rooms
+                room.connections.pop(conn_id, None)
+                room.conn_users.pop(conn_id, None)
+        if not conns:
+            self.user_conns.pop(user_id, None)
+            rooms = self.user_rooms.pop(user_id, set())
+            self.user_badge_rooms.pop(user_id, None)
+            self.user_unread.pop(user_id, None)
+            for room_id in rooms:
+                room = self.rooms.get(room_id)
+                if room and not any(u == user_id for u in room.conn_users.values()):
+                    room.user_names.pop(user_id, None)
+            return user_id, rooms
+        return user_id, set()
 
-    async def join_room(self, room_id: str, user_id: str, display_name: str) -> None:
+    async def join_room(
+        self,
+        room_id: str,
+        user_id: str,
+        conn_id: str,
+        display_name: str,
+    ) -> None:
         room = self._get_room(room_id)
-        room.connections[user_id] = self.user_ws[user_id]
+        ws = self.user_conns.get(user_id, {}).get(conn_id)
+        if not ws:
+            return
+        already_in_room = any(u == user_id for u in room.conn_users.values())
+        room.connections[conn_id] = ws
+        room.conn_users[conn_id] = user_id
         room.user_names[user_id] = display_name
         self.user_rooms.setdefault(user_id, set()).add(room_id)
-        await room.broadcast(
-            {
-                "event": "presence",
-                "room_id": room_id,
-                "user_id": user_id,
-                "online": True,
-            },
-            exclude=user_id,
-        )
+        if not already_in_room:
+            await room.broadcast(
+                {
+                    "event": "presence",
+                    "room_id": room_id,
+                    "user_id": user_id,
+                    "online": True,
+                },
+                exclude_conn=conn_id,
+            )
 
-    async def leave_room(self, room_id: str, user_id: str) -> None:
+    async def leave_room(self, room_id: str, conn_id: str) -> None:
         room = self.rooms.get(room_id)
-        if room:
-            room.connections.pop(user_id, None)
+        if not room:
+            return
+        user_id = room.conn_users.pop(conn_id, None)
+        room.connections.pop(conn_id, None)
+        if user_id and not any(u == user_id for u in room.conn_users.values()):
             room.user_names.pop(user_id, None)
             await room.broadcast(
                 {
@@ -388,22 +413,26 @@ class ConnectionManager:
                     "online": False,
                 },
             )
-        rooms = self.user_rooms.get(user_id)
+        rooms = self.user_rooms.get(user_id or "")
         if rooms:
             rooms.discard(room_id)
 
     async def broadcast_to_room(
-        self, room_id: str, event: dict, exclude: str | None = None
+        self,
+        room_id: str,
+        event: dict,
+        exclude_conn: str | None = None,
     ) -> None:
         room = self.rooms.get(room_id)
         if room:
-            await room.broadcast(event, exclude=exclude)
+            await room.broadcast(event, exclude_conn=exclude_conn)
 
     async def send_to_user(self, user_id: str, event: dict) -> None:
-        ws = self.user_ws.get(user_id)
-        if ws:
+        conns = self.user_conns.get(user_id, {})
+        payload = json.dumps(event)
+        for ws in list(conns.values()):
             try:
-                await ws.send_text(json.dumps(event))
+                await ws.send_text(payload)
             except Exception:
                 pass
 
@@ -504,6 +533,7 @@ async def _moderate_and_broadcast(
     mgr,
     room_id,
     user_id,
+    conn_id,
     display_name,
     username,
     color_index,
@@ -566,7 +596,7 @@ async def _moderate_and_broadcast(
         reply_snippet = _build_reply_snippet(db, reply_to_id)
         if reply_snippet:
             event_data["reply_to"] = reply_snippet
-        await mgr.broadcast_to_room(room_id, event_data, exclude=user_id)
+        await mgr.broadcast_to_room(room_id, event_data, exclude_conn=conn_id)
 
         if msg_type == "text" and text:
             link_url = _extract_first_url(text)
@@ -656,7 +686,7 @@ async def _moderate_and_broadcast(
                 "content": content,
                 "created_at": msg["created_at"],
             },
-            exclude=user_id,
+            exclude_conn=conn_id,
         )
 
 
@@ -672,12 +702,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
     await ws.accept()
     user_id = user["id"]
+    conn_id = secrets.token_hex(8)
     display_name = user["display_name"]
     ukeys = user.keys()
     username = user["username"] if "username" in ukeys else ""
     color_index = user["color_index"] if "color_index" in ukeys else 0
     avatar_url = user["avatar_url"] if "avatar_url" in ukeys else ""
-    await manager.connect(ws, user_id)
+    await manager.connect(ws, user_id, conn_id)
 
     memberships = get_user_memberships(db, user_id)
     dm_rooms = db.execute(
@@ -743,7 +774,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 room_id = data.get("room_id")
                 room_row = get_room(db, room_id) if room_id else None
                 if room_id and room_row:
-                    await manager.join_room(room_id, user_id, display_name)
+                    await manager.join_room(room_id, user_id, conn_id, display_name)
                     is_member = db.execute(
                         "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
                         (user_id, room_id),
@@ -773,7 +804,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
             elif event == "leave_room":
                 room_id = data.get("room_id")
                 if room_id:
-                    await manager.leave_room(room_id, user_id)
+                    await manager.leave_room(room_id, conn_id)
 
             elif event == "mark_read":
                 room_id = data.get("room_id")
@@ -871,6 +902,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         manager,
                         room_id,
                         user_id,
+                        conn_id,
                         display_name,
                         username,
                         color_index,
@@ -897,7 +929,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "user_id": user_id,
                             "active": active,
                         },
-                        exclude=user_id,
+                        exclude_conn=conn_id,
                     )
 
             elif event == "create_meetup":
@@ -1140,7 +1172,7 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
     except Exception:
         logger.exception("Chat WebSocket error for user %s", user_id)
     finally:
-        left_rooms = manager.disconnect(user_id)
+        disc_user, left_rooms = manager.disconnect(conn_id)
         for room_id in left_rooms:
             await manager.broadcast_to_room(
                 room_id,

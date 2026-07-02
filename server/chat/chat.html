@@ -986,6 +986,7 @@ function handleWSEvent(data) {
       break;
     case 'message':
       if (!messagesByRoom[data.room_id]) messagesByRoom[data.room_id] = [];
+      if (messagesByRoom[data.room_id].some(m => m.id === data.id)) break;
       messagesByRoom[data.room_id].push(data);
       if (currentRoom === data.room_id) {
         const scrollEl = document.getElementById('msg-scroll');
