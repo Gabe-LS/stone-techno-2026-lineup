@@ -994,16 +994,26 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
                     continue
                 try:
-                    room_id = find_or_create_dm(db, event_id, user_id, target_user_id)
                     from chat_db import get_user
 
+                    existing = db.execute(
+                        "SELECT dp1.room_id FROM dm_participants dp1 "
+                        "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id "
+                        "WHERE dp1.user_id = ? AND dp2.user_id = ?",
+                        (user_id, target_user_id),
+                    ).fetchone()
                     target = get_user(db, target_user_id)
                     target_name = target["display_name"] if target else ""
+                    if existing:
+                        room_id = existing["room_id"]
+                    else:
+                        room_id = None
                     await manager.send_to_user(
                         user_id,
                         {
                             "event": "dm_opened",
                             "room_id": room_id,
+                            "target_user_id": target_user_id,
                             "name": target_name,
                         },
                     )

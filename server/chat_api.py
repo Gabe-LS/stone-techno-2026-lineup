@@ -444,7 +444,14 @@ async def list_rooms(request: Request):
         ).fetchall()
         member_rooms = {r["room_id"] for r in rows}
     rooms = get_rooms_by_event(db, DEFAULT_EVENT_ID)
-    return [
+    last_msgs = {}
+    for row in db.execute(
+        "SELECT room_id, MAX(created_at) as last_at FROM messages "
+        "WHERE expires_at > ? GROUP BY room_id",
+        (datetime.now(timezone.utc).isoformat(),),
+    ).fetchall():
+        last_msgs[row["room_id"]] = row["last_at"]
+    result = [
         {
             "id": r["id"],
             "type": r["type"],
@@ -452,9 +459,12 @@ async def list_rooms(request: Request):
             "is_main": bool(r["is_main"]),
             "online_count": len(manager.get_online_users(r["id"])),
             "is_member": r["id"] in member_rooms,
+            "last_message_at": last_msgs.get(r["id"], ""),
         }
         for r in rooms
     ]
+    result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
+    return result
 
 
 @router.post("/rooms/{room_id}/join", status_code=204)
@@ -542,6 +552,14 @@ async def list_meetups(request: Request, stage_id: str | None = None):
     user, db = _get_user_from_cookie(request)
     user_id = user["id"]
     meetups = get_active_meetups(db, DEFAULT_EVENT_ID)
+    now = datetime.now(timezone.utc).isoformat()
+    last_msgs = {}
+    for row in db.execute(
+        "SELECT room_id, MAX(created_at) as last_at FROM messages "
+        "WHERE expires_at > ? GROUP BY room_id",
+        (now,),
+    ).fetchall():
+        last_msgs[row["room_id"]] = row["last_at"]
     result = []
     for m in meetups:
         if stage_id and m["stage_id"] != stage_id:
@@ -565,8 +583,10 @@ async def list_meetups(request: Request, stage_id: str | None = None):
                     for a in attendees
                 ],
                 "expires_at": m["expires_at"],
+                "last_message_at": last_msgs.get(m["id"], ""),
             }
         )
+    result.sort(key=lambda r: r["last_message_at"] or "", reverse=True)
     return result
 
 
@@ -638,20 +658,24 @@ async def leave_meetup_endpoint(meetup_id: str, request: Request):
 @router.get("/dms")
 async def list_dms(request: Request):
     user, db = _get_user_from_cookie(request)
+    now = datetime.now(timezone.utc).isoformat()
     dms = db.execute(
-        "SELECT r.id, r.name, dp2.user_id AS other_user_id, u.display_name AS other_name "
+        "SELECT r.id, r.name, dp2.user_id AS other_user_id, u.display_name AS other_name, "
+        "(SELECT MAX(m.created_at) FROM messages m WHERE m.room_id = r.id AND m.expires_at > ?) AS last_message_at "
         "FROM dm_participants dp1 "
         "JOIN dm_participants dp2 ON dp1.room_id = dp2.room_id AND dp1.user_id != dp2.user_id "
         "JOIN rooms r ON r.id = dp1.room_id "
         "JOIN users u ON u.id = dp2.user_id "
-        "WHERE dp1.user_id = ?",
-        (user["id"],),
+        "WHERE dp1.user_id = ? "
+        "ORDER BY last_message_at DESC",
+        (now, user["id"]),
     ).fetchall()
     return [
         {
             "room_id": dm["id"],
             "other_user_id": dm["other_user_id"],
             "other_name": dm["other_name"],
+            "last_message_at": dm["last_message_at"] or "",
         }
         for dm in dms
     ]

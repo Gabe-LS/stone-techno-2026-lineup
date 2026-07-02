@@ -310,7 +310,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .tab-dot.active { display: inline-block; }
 
 /* --- Hamburger menu (mobile) --- */
-.chat-hamburger { display: none; background: none; border: none; color: #fff; width: 48px; height: 48px; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+.chat-hamburger { display: none; background: none; border: none; color: #fff; width: 48px; height: 48px; align-items: center; justify-content: center; position: relative; flex-shrink: 0; margin-right: calc(-1 * var(--space-lg)); }
 .hamburger-dot { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); position: absolute; top: 10px; right: 8px; }
 .hamburger-dot.active { display: block; }
 .chat-menu { display: none; }
@@ -341,11 +341,15 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
   .main-panel { display: none; }
   .main-panel.visible { display: flex; flex-direction: column; height: 100%; }
   .chat-hamburger { display: flex; }
-  .chat-menu { position: fixed; top: 48px; left: 0; right: 0; z-index: 49; background: var(--gray-900); flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.4); max-height: 70vh; overflow-y: auto; }
+  .chat-menu { position: fixed; top: 48px; left: 0; right: 0; bottom: 0; z-index: 49; background: var(--gray-900); flex-direction: column; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .chat-menu::-webkit-scrollbar { display: none; }
   .chat-menu.open { display: flex; }
   .menu-section { background: none; color: #ccc; border: none; border-top: 1px solid var(--gray-700); padding: 14px 16px; font-size: 15px; text-align: left; font-family: inherit; display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }
-  .menu-section .menu-arrow { margin-left: auto; transition: transform 0.2s; font-size: 12px; }
-  .menu-section.expanded .menu-arrow { transform: rotate(90deg); }
+  .menu-section .menu-arrow { margin-left: auto; width: 16px; height: 16px; flex-shrink: 0; }
+  .menu-section .arrow-down { display: none; }
+  .menu-section .arrow-right { display: block; }
+  .menu-section.expanded .arrow-down { display: block; }
+  .menu-section.expanded .arrow-right { display: none; }
   .menu-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); display: none; flex-shrink: 0; }
   .menu-dot.active { display: inline-block; }
   .menu-items { display: none; background: var(--gray-800); }
@@ -379,6 +383,8 @@ const USER_ICON = '<svg class="icon-user" width="14" height="14" viewBox="0 0 24
 const ICON_HAMBURGER = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 7C20.75 7.41421 20.4142 7.75 20 7.75L4 7.75C3.58579 7.75 3.25 7.41421 3.25 7C3.25 6.58579 3.58579 6.25 4 6.25L20 6.25C20.4142 6.25 20.75 6.58579 20.75 7Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 12C20.75 12.4142 20.4142 12.75 20 12.75L4 12.75C3.58579 12.75 3.25 12.4142 3.25 12C3.25 11.5858 3.58579 11.25 4 11.25L20 11.25C20.4142 11.25 20.75 11.5858 20.75 12Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M20.75 17C20.75 17.4142 20.4142 17.75 20 17.75L4 17.75C3.58579 17.75 3.25 17.4142 3.25 17C3.25 16.5858 3.58579 16.25 4 16.25L20 16.25C20.4142 16.25 20.75 16.5858 20.75 17Z"/></svg>';
 const ICON_BACK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2.75C6.89137 2.75 2.75 6.89137 2.75 12C2.75 17.1086 6.89137 21.25 12 21.25C17.1086 21.25 21.25 17.1086 21.25 12C21.25 6.89137 17.1086 2.75 12 2.75ZM1.25 12C1.25 6.06294 6.06294 1.25 12 1.25C17.9371 1.25 22.75 6.06294 22.75 12C22.75 17.9371 17.9371 22.75 12 22.75C6.06294 22.75 1.25 17.9371 1.25 12ZM11.5303 8.46967C11.8232 8.76256 11.8232 9.23744 11.5303 9.53033L9.81066 11.25H16C16.4142 11.25 16.75 11.5858 16.75 12C16.75 12.4142 16.4142 12.75 16 12.75H9.81066L11.5303 14.4697C11.8232 14.7626 11.8232 15.2374 11.5303 15.5303C11.2374 15.8232 10.7626 15.8232 10.4697 15.5303L7.46967 12.5303C7.17678 12.2374 7.17678 11.7626 7.46967 11.4697L10.4697 8.46967C10.7626 8.17678 11.2374 8.17678 11.5303 8.46967Z"/></svg>';
 let replyTo = null;
+let _pendingDmTarget = null;
+let _pendingDmName = '';
 let isMobile = window.innerWidth < 768;
 let _toastTimer = null;
 
@@ -1058,8 +1064,14 @@ function handleWSEvent(data) {
     case 'strike': showToast(`Warning (${data.count}/3): ${data.reason}`); break;
     case 'banned': showToast('You have been banned: ' + data.reason); currentUser = null; renderAuth(); break;
     case 'dm_opened':
-      dbg('[DM] dm_opened, navigating to', data.room_id, data.name);
-      openRoom(data.room_id, data.name || '', 'dm');
+      dbg('[DM] dm_opened', data.room_id, data.name, data.target_user_id);
+      if (data.room_id) {
+        openRoom(data.room_id, data.name || '', 'dm');
+      } else {
+        _pendingDmTarget = data.target_user_id;
+        _pendingDmName = data.name || '';
+        openRoom('pending-dm', data.name || '', 'dm');
+      }
       break;
     case 'link_preview': {
       dbg('[LINK] preview for', data.message_id);
@@ -1359,7 +1371,9 @@ async function openRoom(roomId, roomName, roomType) {
   else if (currentRoomType === 'meetup') history.replaceState(null, '', '/chat/m/' + roomId);
   else if (rooms.length > 1) history.replaceState(null, '', '/chat/r/' + roomId);
   const historyReady = new Promise(r => { window._roomHistoryResolve = r; setTimeout(r, 3000); });
-  if (ws && ws.readyState === 1) {
+  if (roomId === 'pending-dm') {
+    window._roomHistoryResolve?.(); window._roomHistoryResolve = null;
+  } else if (ws && ws.readyState === 1) {
     wsSend('join_room', { room_id: roomId });
   } else {
     try {
@@ -1415,13 +1429,11 @@ function renderChatView(roomName) {
   if (isMobile) {
     document.getElementById('app').innerHTML = `
       <div class="header">
-        <button class="back" onclick="leaveRoom()">${ICON_BACK}</button>
         <div class="header-info">
           <span class="title">${esc(roomName)}</span>
           <span class="online">${onlineCount} online</span>
         </div>
-        ${headerAvatar}
-        <button class="chat-hamburger" onclick="toggleChatMenu()">${hamburgerSvg2}<span class="hamburger-dot"></span></button>
+        <button class="chat-hamburger" onclick="toggleChatMenu()">${ICON_HAMBURGER}<span class="hamburger-dot"></span></button>
       </div>
       <div class="content" id="msg-scroll">
         <div class="messages" id="messages"></div>
@@ -1730,11 +1742,10 @@ function msgTouchMove(e) {
   if (dy > 30) { clearTimeout(_longPressTimer); _swipeMsgEl.style.transform = ''; return; }
   if (Math.abs(dx) > 10) clearTimeout(_longPressTimer);
   const isMe = _swipeMsgEl.classList.contains('msg-mine');
-  const swipeDir = isMe ? -1 : 1;
-  const offset = Math.max(0, dx * swipeDir);
-  const clamped = Math.min(offset, 60);
-  if (clamped > 0) {
-    _swipeMsgEl.style.transform = `translateX(${clamped * swipeDir * -1}px)`;
+  const validSwipe = isMe ? dx < 0 : dx > 0;
+  if (validSwipe && Math.abs(dx) > 10) {
+    const clamped = Math.sign(dx) * Math.min(Math.abs(dx), 60);
+    _swipeMsgEl.style.transform = `translateX(${clamped}px)`;
     _swipeMsgEl.style.transition = 'none';
   }
 }
@@ -1878,10 +1889,25 @@ function sendChatMessage(type, content, replyToId) {
   return tempId;
 }
 
-function sendMessage() {
+async function sendMessage() {
   const input = document.getElementById('msg-input');
   if (!input || !input.value.trim()) return;
   const text = input.value.trim();
+  if (_pendingDmTarget && currentRoom === 'pending-dm') {
+    dbg('[DM] creating DM room on first message');
+    try {
+      const res = await api('/dms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_user_id: _pendingDmTarget }) });
+      const roomId = res.room_id;
+      _pendingDmTarget = null;
+      currentRoom = roomId;
+      history.replaceState(null, '', '/chat/d/' + roomId);
+      wsSend('join_room', { room_id: roomId });
+      input.value = '';
+      sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
+      cancelReply();
+      return;
+    } catch (e) { showToast(e.message); return; }
+  }
   sendChatMessage('text', JSON.stringify({ text }), replyTo?.id);
   input.value = '';
   cancelReply();
@@ -1891,11 +1917,11 @@ function sendMessage() {
 function _renderChatMenuHtml() {
   return `
     <div class="chat-menu" id="chat-menu">
-      <button class="menu-section" onclick="toggleMenuSection('rooms')">Rooms <span class="menu-dot"></span><span class="menu-arrow">&#9656;</span></button>
+      <button class="menu-section" onclick="toggleMenuSection('rooms')">Rooms <span class="menu-dot"></span><span class="menu-arrow"><svg class="arrow-right" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg><svg class="arrow-down" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.43057 8.51192C4.70014 8.19743 5.17361 8.161 5.48811 8.43057L12 14.0122L18.5119 8.43057C18.8264 8.16101 19.2999 8.19743 19.5695 8.51192C19.839 8.82642 19.8026 9.29989 19.4881 9.56946L12.4881 15.5695C12.2072 15.8102 11.7928 15.8102 11.5119 15.5695L4.51192 9.56946C4.19743 9.29989 4.161 8.82641 4.43057 8.51192Z"/></svg></span></button>
       <div class="menu-items" id="menu-rooms"></div>
-      <button class="menu-section" onclick="toggleMenuSection('meetups')">Meetups <span class="menu-dot"></span><span class="menu-arrow">&#9656;</span></button>
+      <button class="menu-section" onclick="toggleMenuSection('meetups')">Meetups <span class="menu-dot"></span><span class="menu-arrow"><svg class="arrow-right" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg><svg class="arrow-down" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.43057 8.51192C4.70014 8.19743 5.17361 8.161 5.48811 8.43057L12 14.0122L18.5119 8.43057C18.8264 8.16101 19.2999 8.19743 19.5695 8.51192C19.839 8.82642 19.8026 9.29989 19.4881 9.56946L12.4881 15.5695C12.2072 15.8102 11.7928 15.8102 11.5119 15.5695L4.51192 9.56946C4.19743 9.29989 4.161 8.82641 4.43057 8.51192Z"/></svg></span></button>
       <div class="menu-items" id="menu-meetups"></div>
-      <button class="menu-section" onclick="toggleMenuSection('dms')">DMs <span class="menu-dot"></span><span class="menu-arrow">&#9656;</span></button>
+      <button class="menu-section" onclick="toggleMenuSection('dms')">DMs <span class="menu-dot"></span><span class="menu-arrow"><svg class="arrow-right" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.51192 4.43057C8.82641 4.161 9.29989 4.19743 9.56946 4.51192L15.5695 11.5119C15.8102 11.7928 15.8102 12.2072 15.5695 12.4881L9.56946 19.4881C9.29989 19.8026 8.82641 19.839 8.51192 19.5695C8.19743 19.2999 8.161 18.8264 8.43057 18.5119L14.0122 12L8.43057 5.48811C8.161 5.17361 8.19743 4.70014 8.51192 4.43057Z"/></svg><svg class="arrow-down" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.43057 8.51192C4.70014 8.19743 5.17361 8.161 5.48811 8.43057L12 14.0122L18.5119 8.43057C18.8264 8.16101 19.2999 8.19743 19.5695 8.51192C19.839 8.82642 19.8026 9.29989 19.4881 9.56946L12.4881 15.5695C12.2072 15.8102 11.7928 15.8102 11.5119 15.5695L4.51192 9.56946C4.19743 9.29989 4.161 8.82641 4.43057 8.51192Z"/></svg></span></button>
       <div class="menu-items" id="menu-dms"></div>
       <button class="menu-section" onclick="openNotificationsModal();closeChatMenu()">Notifications</button>
       <button class="menu-section" onclick="closeChatMenu();showSettingsMenu()">Profile</button>
@@ -1930,12 +1956,9 @@ async function toggleMenuSection(section) {
   const items = document.getElementById('menu-' + section);
   if (!btn || !items) return;
   const expanding = !btn.classList.contains('expanded');
-  buttons.forEach((b, i) => { if (i < 3) { b.classList.remove('expanded'); document.getElementById('menu-' + ['rooms','meetups','dms'][i])?.classList.remove('open'); } });
-  if (expanding) {
-    btn.classList.add('expanded');
-    items.classList.add('open');
-    await _loadMenuSection(section, items);
-  }
+  btn.classList.toggle('expanded');
+  items.classList.toggle('open');
+  if (expanding) await _loadMenuSection(section, items);
 }
 
 async function _loadMenuSection(section, container) {
@@ -1971,8 +1994,18 @@ async function _loadMenuSection(section, container) {
   }
 }
 
-function _populateMenuSections() {
+async function _populateMenuSections() {
   updateTabBadges();
+  for (const section of ['rooms', 'meetups', 'dms']) {
+    const idx = { rooms: 0, meetups: 1, dms: 2 }[section];
+    const btn = document.querySelectorAll('#chat-menu .menu-section')[idx];
+    const items = document.getElementById('menu-' + section);
+    if (btn && items) {
+      btn.classList.add('expanded');
+      items.classList.add('open');
+      await _loadMenuSection(section, items);
+    }
+  }
 }
 
 function leaveRoom() {
@@ -3281,6 +3314,10 @@ async function route() {
     openRoom(roomId, roomName, roomType);
   } else if (rooms.length === 1) {
     openRoom(rooms[0].id, rooms[0].name, rooms[0].type);
+  } else if (isMobile) {
+    const main = rooms.find(r => r.is_main) || rooms[0];
+    if (main) openRoom(main.id, main.name, main.type);
+    else renderRoomList();
   } else {
     currentRoom = null;
     currentRoomName = null;
