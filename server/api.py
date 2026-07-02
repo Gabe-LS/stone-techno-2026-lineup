@@ -379,9 +379,9 @@ async def _push_notification_scheduler() -> None:
                             (session_id, slot_id),
                         )
                         db.commit()
-                    logger.info(
-                        "Sent push for %s to session %s", artists, session_id[:8]
-                    )
+                        logger.info(
+                            "Sent push for %s to session %s", artists, session_id[:8]
+                        )
             finally:
                 db.close()
         except Exception:

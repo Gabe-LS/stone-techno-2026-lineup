@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -61,6 +62,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat/api")
 DEFAULT_EVENT_ID = os.environ.get("CHAT_EVENT_ID", "stone-techno-2026")
 ADMIN_TOKEN = os.environ.get("CHAT_ADMIN_TOKEN", "")
+_apple_jwks_client = None
+_email_rate: dict[str, list[float]] = {}
 
 DISPOSABLE_DOMAINS: set[str] = set()
 _DISPOSABLE_PATH = Path(__file__).resolve().parent / "chat" / "disposable_domains.txt"
@@ -192,10 +195,12 @@ async def auth_apple(request: Request, response: Response):
     try:
         import jwt
 
-        jwks_client = jwt.PyJWKClient(
-            "https://appleid.apple.com/auth/keys", cache_keys=True
-        )
-        signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+        global _apple_jwks_client
+        if _apple_jwks_client is None:
+            _apple_jwks_client = jwt.PyJWKClient(
+                "https://appleid.apple.com/auth/keys", cache_keys=True
+            )
+        signing_key = _apple_jwks_client.get_signing_key_from_jwt(id_token)
         payload = jwt.decode(
             id_token,
             signing_key.key,
@@ -218,6 +223,12 @@ async def auth_apple(request: Request, response: Response):
 
 @router.post("/login")
 async def auth_email_start(request: Request):
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    _email_rate[ip] = [t for t in _email_rate.get(ip, []) if now - t < 900]
+    if len(_email_rate[ip]) >= 5:
+        raise HTTPException(429, "Too many requests. Try again later.")
+    _email_rate[ip].append(now)
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     fingerprint = body.get("device_fingerprint")
@@ -445,7 +456,12 @@ async def auth_update_profile(request: Request):
         if text_to_moderate:
             from chat_moderation import check_openai_moderation
 
-            ai_result = await check_openai_moderation(text_to_moderate)
+            try:
+                ai_result = await check_openai_moderation(text_to_moderate)
+            except Exception:
+                raise HTTPException(
+                    500, "Name could not be verified. Please try again."
+                )
             if ai_result:
                 raise HTTPException(
                     400, f"Name not allowed: {ai_result.get('category', 'content policy')}"
@@ -575,6 +591,12 @@ async def room_messages(room_id: str, request: Request):
         if room["type"] == "dm":
             if not db.execute(
                 "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                (room_id, user["id"]),
+            ).fetchone():
+                raise HTTPException(403, "Access denied")
+        elif room["type"] == "meetup":
+            if not db.execute(
+                "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
                 (room_id, user["id"]),
             ).fetchone():
                 raise HTTPException(403, "Access denied")
@@ -862,6 +884,14 @@ async def upload_avatar(request: Request, file: UploadFile = File(...)):
         if len(data) > 500 * 1024:
             raise HTTPException(400, "Max file size is 500KB")
 
+        try:
+            import pyvips
+            pyvips.Image.new_from_buffer(data, "")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(400, "Invalid image file")
+
         import time
 
         version = str(int(time.time()))
@@ -929,6 +959,8 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
 
         img = pyvips.Image.new_from_buffer(data, "")
         w, h = img.width, img.height
+        if w * h > 40_000_000:
+            raise ValueError("Image too large")
         mod_path = upload_dir / f"{token}_mod.webp"
         max_side = max(w, h)
         if max_side > 880:

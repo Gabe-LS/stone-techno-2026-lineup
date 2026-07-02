@@ -254,7 +254,7 @@ async def check_openai_moderation(
                 }
         return None
     except Exception:
-        return None
+        raise
 
 
 async def check_content_detection(text: str) -> dict | None:
@@ -302,7 +302,7 @@ async def check_content_detection(text: str) -> dict | None:
             }
         return None
     except Exception:
-        return None
+        raise
 
 
 # --- Strike Logic ---

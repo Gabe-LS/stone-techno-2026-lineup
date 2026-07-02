@@ -207,6 +207,9 @@ async def _fetch_og_preview(client, url: str) -> dict | None:
         )
     if resp.status_code != 200:
         return None
+    cl = resp.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > 1_000_000:
+        return None
     ct = resp.headers.get("content-type", "")
     if "text/html" not in ct and "application/xhtml" not in ct:
         return None
@@ -822,6 +825,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             (room_id, user_id),
                         ).fetchone():
                             continue
+                    elif room_row["type"] == "meetup":
+                        if not db.execute(
+                            "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
+                            (room_id, user_id),
+                        ).fetchone():
+                            continue
                     await manager.join_room(room_id, user_id, conn_id, display_name)
                     is_member = db.execute(
                         "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
@@ -908,6 +917,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                                 "reason": "Cannot message this user.",
                             },
                         )
+                        continue
+
+                if send_room["type"] == "meetup":
+                    if not db.execute(
+                        "SELECT 1 FROM meetup_attendees WHERE meetup_id = ? AND user_id = ?",
+                        (room_id, user_id),
+                    ).fetchone():
                         continue
 
                 join_room_membership(db, user_id, room_id)
