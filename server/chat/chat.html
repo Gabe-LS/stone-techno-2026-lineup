@@ -1021,7 +1021,7 @@ function handleWSEvent(data) {
         if (el) { el.setAttribute('data-msg-id', data.id); el.classList.remove('msg-pending'); }
         verify('message_acked', el, 'pending→confirmed temp_id=' + data.temp_id + ' → id=' + data.id);
       } else {
-        verify('message_acked', false, 'temp_id not found: ' + data.temp_id);
+        dbg('[WS] message_acked ignored (sent from another device)');
       }
       break;
     }
@@ -3370,6 +3370,31 @@ document.addEventListener('visibilitychange', () => {
 });
 route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  let _kbOpen = false;
+  vv.addEventListener('resize', () => {
+    const app = document.getElementById('app');
+    if (vv.height < window.outerHeight - 100) {
+      app.style.height = vv.height + 'px';
+      _kbOpen = true;
+    } else if (_kbOpen) {
+      app.style.height = '';
+      _kbOpen = false;
+    }
+    window.scrollTo(0, 0);
+  });
+  vv.addEventListener('scroll', () => window.scrollTo(0, 0));
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!document.activeElement || document.activeElement === document.body) {
+        document.getElementById('app').style.height = '';
+        _kbOpen = false;
+        window.scrollTo(0, 0);
+      }
+    }, 50);
+  });
+}
 </script>
 </body>
 </html>

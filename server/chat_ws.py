@@ -827,15 +827,19 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     db, room_id, user_id, msg_type, content, reply_to_id=reply_to_id
                 )
 
-                await manager.send_to_user(
-                    user_id,
-                    {
-                        "event": "message_acked",
-                        "temp_id": temp_id,
-                        "id": msg["id"],
-                        "created_at": msg["created_at"],
-                    },
-                )
+                try:
+                    await ws.send_text(
+                        json.dumps(
+                            {
+                                "event": "message_acked",
+                                "temp_id": temp_id,
+                                "id": msg["id"],
+                                "created_at": msg["created_at"],
+                            }
+                        )
+                    )
+                except Exception:
+                    pass
 
                 text_for_moderation = ""
                 if msg_type == "text":
