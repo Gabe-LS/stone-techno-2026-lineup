@@ -811,7 +811,7 @@ def generate_ics(slot_id: str):
     end = slot["end"]
 
     def _ics_esc(s: str) -> str:
-        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
 
     def to_ics_dt(iso: str) -> str:
         clean = iso.replace("-", "").replace(":", "")

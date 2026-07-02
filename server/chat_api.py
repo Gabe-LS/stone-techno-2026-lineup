@@ -45,6 +45,7 @@ from chat_db import (
     get_meetup_attendees,
     get_active_meetups,
     find_or_create_dm,
+    is_blocked as db_is_blocked,
     block_user as db_block_user,
     unblock_user as db_unblock_user,
     get_pending_reports,
@@ -159,11 +160,14 @@ async def auth_google(request: Request, response: Response):
     if not id_token:
         raise HTTPException(400, "id_token required")
 
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    if not client_id:
+        raise HTTPException(501, "Google Sign-In not configured")
+
     try:
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests
 
-        client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
         info = google_id_token.verify_oauth2_token(
             id_token, google_requests.Request(), client_id
         )
@@ -235,8 +239,10 @@ async def auth_email_start(request: Request):
     try:
         from email_validator import validate_email
 
-        result = validate_email(email, check_deliverability=True)
+        result = await asyncio.to_thread(validate_email, email, check_deliverability=True)
         email = result.normalized
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(400, str(e))
 
@@ -274,14 +280,15 @@ async def auth_email_start(request: Request):
             )
             verify_url = f"{base_url}/chat/v/{token}"
             from_addr = os.environ.get("CHAT_EMAIL_FROM", "no-reply@deftlab.dev")
-            client.send_basic_email(
+            await asyncio.to_thread(
+                client.send_basic_email,
                 {
                     "from": EmailAddress(from_addr),
                     "to": [EmailAddress(email)],
                     "subject": "Sign in to Festival Chat",
                     "html": f'<p>Click to sign in:</p><p><a href="{verify_url}">{verify_url}</a></p>'
                     f"<p>This link expires in 15 minutes.</p>",
-                }
+                },
             )
         except Exception as e:
             logger.error("Failed to send email: %s", e)
@@ -838,6 +845,10 @@ async def create_dm(request: Request):
         target_id = body.get("target_user_id")
         if not target_id:
             raise HTTPException(400, "target_user_id required")
+        if target_id == user["id"]:
+            raise HTTPException(400, "Cannot message yourself")
+        if db_is_blocked(db, target_id, user["id"]):
+            raise HTTPException(403, "Cannot message this user")
         try:
             room_id = find_or_create_dm(db, DEFAULT_EVENT_ID, user["id"], target_id)
         except ValueError:

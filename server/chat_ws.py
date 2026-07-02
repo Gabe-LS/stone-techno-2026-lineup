@@ -893,6 +893,22 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
                     continue
 
+                if msg_type in ("image", "video"):
+                    try:
+                        _media_url = json.loads(content).get("url", "")
+                    except (json.JSONDecodeError, AttributeError, TypeError):
+                        _media_url = ""
+                    if not _UPLOAD_URL_RE.match(_media_url):
+                        await manager.send_to_user(
+                            user_id,
+                            {
+                                "event": "message_rejected",
+                                "temp_id": temp_id,
+                                "reason": "Invalid media URL.",
+                            },
+                        )
+                        continue
+
                 send_room = get_room(db, room_id)
                 if not send_room:
                     continue
@@ -1034,6 +1050,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     )
 
             elif event == "create_meetup":
+                if not manager.check_rate_limit(user_id):
+                    continue
                 stage_id = data.get("stage_id")
                 title = (data.get("title") or "")[:60]
                 meetup_time = data.get("meetup_time")

@@ -3278,7 +3278,7 @@ async function route() {
   const pathDm = path.match(/\/chat\/d\/(.+)/)?.[1] || null;
   const pathMeetup = path.match(/\/chat\/m\/(.+)/)?.[1] || null;
   const pathMsg = path.match(/\/chat\/msg\/(.+)/)?.[1] || null;
-  const targetRoom = pathRoom || null;
+  const targetRoom = pathRoom || pathDm || pathMeetup || null;
   dbg('route:', pathRoom ? 'room=' + pathRoom : pathDm ? 'dm=' + pathDm : pathMeetup ? 'meetup=' + pathMeetup : pathMsg ? 'msg=' + pathMsg : '(main)');
 
   if (targetRoom && currentRoom === targetRoom && currentRoomName) return;
