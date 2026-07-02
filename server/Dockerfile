@@ -1,9 +1,10 @@
 FROM python:3.12-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg libvips-dev && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY api.py .
+COPY api.py chat_api.py chat_ws.py chat_db.py chat_moderation.py ./
+COPY chat/ ./chat/
 EXPOSE 8080
 # Caddy (on the same Docker network) is the only ingress; it strips and re-sets forwarded headers
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]

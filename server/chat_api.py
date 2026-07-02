@@ -96,7 +96,7 @@ def _require_admin(request: Request) -> None:
     token = request.headers.get("X-Admin-Token") or request.query_params.get(
         "admin_token"
     )
-    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+    if not ADMIN_TOKEN or not secrets.compare_digest(token or "", ADMIN_TOKEN):
         raise HTTPException(403, "Admin access required")
 
 
@@ -165,7 +165,8 @@ async def auth_google(request: Request, response: Response):
         provider_id = info["sub"]
         name = info.get("name") or info.get("email", "").split("@")[0]
     except Exception as e:
-        raise HTTPException(401, f"Invalid Google token: {e}")
+        logger.warning("Google token verification failed: %s", e)
+        raise HTTPException(401, "Invalid Google token")
 
     db = _get_db()
     return _authenticate(db, "google", provider_id, name, fingerprint, response)
@@ -179,15 +180,29 @@ async def auth_apple(request: Request, response: Response):
     if not id_token:
         raise HTTPException(400, "id_token required")
 
+    apple_client_id = os.environ.get("APPLE_CLIENT_ID", "")
+    if not apple_client_id:
+        raise HTTPException(501, "Apple Sign-In not configured")
+
     try:
         import jwt
 
-        header = jwt.get_unverified_header(id_token)
-        payload = jwt.decode(id_token, options={"verify_signature": False})
+        jwks_client = jwt.PyJWKClient(
+            "https://appleid.apple.com/auth/keys", cache_keys=True
+        )
+        signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+        payload = jwt.decode(
+            id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=apple_client_id,
+            issuer="https://appleid.apple.com",
+        )
         provider_id = payload["sub"]
         name = body.get("display_name") or payload.get("email", "").split("@")[0]
     except Exception as e:
-        raise HTTPException(401, f"Invalid Apple token: {e}")
+        logger.warning("Apple token verification failed: %s", e)
+        raise HTTPException(401, "Invalid Apple token")
 
     db = _get_db()
     return _authenticate(db, "apple", provider_id, name, fingerprint, response)
@@ -513,6 +528,12 @@ async def room_messages(room_id: str, request: Request):
     room = get_room(db, room_id)
     if not room:
         raise HTTPException(404, "Room not found")
+    if room["type"] == "dm":
+        if not db.execute(
+            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+            (room_id, user["id"]),
+        ).fetchone():
+            raise HTTPException(403, "Access denied")
     messages = get_room_messages(db, room_id, limit=100)
     return [
         {
@@ -536,6 +557,12 @@ async def get_message_context(message_id: str, request: Request):
     if not msg:
         raise HTTPException(404, "Message not found")
     room = get_room(db, msg["room_id"])
+    if room and room["type"] == "dm":
+        if not db.execute(
+            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+            (msg["room_id"], user["id"]),
+        ).fetchone():
+            raise HTTPException(404, "Message not found")
     return {
         "message_id": message_id,
         "room_id": msg["room_id"],
@@ -817,7 +844,8 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             img.webpsave(str(mod_path), Q=60)
     except Exception as e:
         out_path.unlink(missing_ok=True)
-        raise HTTPException(500, f"Image processing failed: {e}")
+        logger.error("Image processing failed: %s", e)
+        raise HTTPException(500, "Image processing failed")
 
     return {
         "url": f"/chat/uploads/{filename}",

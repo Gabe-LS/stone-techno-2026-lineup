@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ipaddress
 import json
 import logging
 import os
@@ -115,7 +116,26 @@ _OEMBED_HOSTS = {
 }
 
 
+def _is_safe_preview_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            return False
+    except ValueError:
+        if hostname in ("localhost",) or hostname.endswith(".local") or hostname.endswith(".internal"):
+            return False
+    return True
+
+
 async def _fetch_link_preview(url: str) -> dict | None:
+    if not _is_safe_preview_url(url):
+        return None
     try:
         from chat_moderation import _get_http_client
 
@@ -774,6 +794,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 room_id = data.get("room_id")
                 room_row = get_room(db, room_id) if room_id else None
                 if room_id and room_row:
+                    if room_row["type"] == "dm":
+                        if not db.execute(
+                            "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                            (room_id, user_id),
+                        ).fetchone():
+                            continue
                     await manager.join_room(room_id, user_id, conn_id, display_name)
                     is_member = db.execute(
                         "SELECT 1 FROM room_memberships WHERE user_id = ? AND room_id = ?",
@@ -823,6 +849,16 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
                 if not room_id or not content:
                     continue
+
+                send_room = get_room(db, room_id)
+                if not send_room:
+                    continue
+                if send_room["type"] == "dm":
+                    if not db.execute(
+                        "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
+                        (room_id, user_id),
+                    ).fetchone():
+                        continue
 
                 join_room_membership(db, user_id, room_id)
                 manager.user_badge_rooms.setdefault(user_id, set()).add(room_id)

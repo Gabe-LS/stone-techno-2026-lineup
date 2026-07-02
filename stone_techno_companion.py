@@ -158,8 +158,7 @@ def main() -> None:
 
                     if args.refresh_followers:
                         db.execute(
-                            "UPDATE artists SET ig_followers = NULL, sc_followers = NULL, "
-                            "spotify_listeners = NULL, ra = NULL, ra_followers = NULL, ra_bio = NULL"
+                            "UPDATE artist_links SET follower_count = NULL"
                         )
                         db.commit()
 

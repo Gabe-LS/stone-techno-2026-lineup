@@ -145,7 +145,7 @@ def _init_db() -> None:
     ).rowcount
     db.commit()
     if pruned:
-        print(f"Pruned {pruned} expired session(s).")
+        logger.info("Pruned %d expired session(s)", pruned)
     db.close()
 
 
