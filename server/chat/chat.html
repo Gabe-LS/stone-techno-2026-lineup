@@ -71,7 +71,7 @@
   --shadow-lg: 0 4px 16px rgba(0,0,0,0.16);
 }
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--color-text); background: var(--color-bg); font-size: var(--font-base); line-height: 1.5; overscroll-behavior: none; }
+html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--color-text); background: var(--color-bg); font-size: var(--font-base); line-height: 1.5; overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
 
 /* --- Layout --- */
 .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
@@ -112,19 +112,19 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 .avatar-sm { width: 28px; height: 28px; font-size: var(--font-xs); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; flex-shrink: 0; }
 
 /* --- Messages --- */
-.messages { padding: var(--space-lg) var(--space-md) var(--space-sm); display: flex; flex-direction: column; gap: 2px; min-height: 100%; justify-content: flex-end; }
+.messages { padding: var(--space-lg) var(--space-md) var(--space-sm); display: flex; flex-direction: column; gap: 2px; min-height: 100%; justify-content: flex-end; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .msg { display: flex; gap: var(--space-sm); padding: var(--space-md) 0; align-items: flex-end; }
 .msg.msg-mine { justify-content: flex-end; }
-.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; -webkit-user-select: none; user-select: none; }
+.msg-bubble { position: relative; padding: var(--space-md) var(--space-md) var(--space-xl); max-width: min(70%, 480px); min-width: 80px; display: inline-block; word-break: break-word; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .msg-mine-bubble { background: var(--user-7-bg); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg); }
 .msg-other-bubble { background: var(--color-surface); color: var(--color-text); border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm); }
 .msg-header { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: 2px; }
 .msg-name { font-weight: 600; font-size: var(--font-xs); cursor: default; }
 .msg-time { position: absolute; bottom: var(--space-sm); right: var(--space-md); font-size: var(--font-xxs); color: var(--color-muted); }
 .msg-text { font-size: var(--font-base); line-height: 1.5; }
-.msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); margin-top: var(--space-xs); display: block; }
+.msg-image { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); margin-top: var(--space-xs); display: block; -webkit-touch-callout: none; }
 .msg-video-wrap { position: relative; display: inline-block; margin-top: var(--space-xs); }
-.msg-video { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); display: block; }
+.msg-video { max-width: 260px; max-height: 260px; border-radius: var(--radius-md); display: block; -webkit-touch-callout: none; }
 .msg-video-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 48px; height: 48px; color: #fff; filter: drop-shadow(0 1px 4px rgba(0,0,0,0.5)); pointer-events: none; transition: opacity 0.15s; }
 .msg-video-wrap.playing .msg-video-play { opacity: 0; }
 .msg-video-fullscreen { position: absolute; bottom: var(--space-md); right: var(--space-md); width: 22px; height: 22px; color: #fff; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7)); opacity: 0; transition: opacity 0.15s; }
@@ -148,7 +148,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 /* --- Link preview --- */
 .msg-link-preview { display: block; text-decoration: none; color: inherit; margin-bottom: var(--space-sm); border-radius: var(--radius-md); overflow: hidden; background: var(--color-surface); max-width: 480px; }
 .msg-link-preview:active { opacity: 0.85; }
-.link-preview-img { width: 100%; aspect-ratio: auto; display: block; }
+.link-preview-img { width: 100%; aspect-ratio: auto; display: block; -webkit-touch-callout: none; }
 .link-preview-body { padding: 10px 12px; }
 .link-preview-title { font-weight: 600; font-size: var(--font-sm); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .link-preview-desc { font-size: var(--font-xs); color: var(--color-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
@@ -209,13 +209,13 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Bl
 @media (hover: hover) { .reaction-picker button:hover { background: var(--color-surface); } }
 
 /* --- Action sheet (mobile bottom drawer / desktop centered modal) --- */
-.action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+.action-sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .action-sheet-overlay.open { opacity: 1; }
 .action-sheet { background: var(--color-bg); width: 90%; max-width: 360px; border-radius: var(--radius-lg); padding: var(--space-sm) 0; transform: scale(0.95); opacity: 0; transition: transform 0.2s, opacity 0.2s; -webkit-user-select: none; user-select: none; }
 .action-sheet-overlay.open .action-sheet { transform: scale(1); opacity: 1; }
 .action-sheet-title { text-align: center; font-weight: 600; font-size: var(--font-sm); color: var(--color-muted); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); }
 .action-sheet-btn { display: block; width: 100%; padding: var(--space-md) var(--space-lg); border: none; background: none; font-size: var(--font-base); cursor: default; text-align: center; font-family: inherit; color: var(--color-text); }
-.action-sheet-btn:active { background: var(--color-surface); }
+@media (hover: hover) { .action-sheet-btn:active { background: var(--color-surface); } }
 .action-sheet-danger { color: var(--color-accent); }
 .action-sheet-cancel { color: var(--color-muted); border-top: 1px solid var(--color-border); margin-top: var(--space-xs); }
 
@@ -1580,8 +1580,8 @@ function renderMessage(m) {
   const color = msgColor(m);
 
   if (isMe) {
-    return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" data-created-at="${m.created_at || ''}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
-      <div class="msg-bubble msg-mine-bubble" style="background:${color.pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),true)">
+    return `<div class="msg msg-mine${pendingCls}" data-msg-id="${m.id}" data-created-at="${m.created_at || ''}">
+      <div class="msg-bubble msg-mine-bubble" style="background:${color.pastel}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),true)">
         ${reactBtn}
         ${replyHtml}${contentHtml}
         ${time}${reactionsHtml}
@@ -1589,9 +1589,9 @@ function renderMessage(m) {
     </div>`;
   }
 
-  return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" data-created-at="${m.created_at || ''}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')">
+  return `<div class="msg msg-other${pendingCls}" data-msg-id="${m.id}" data-created-at="${m.created_at || ''}">
     ${avatarHtml(name, m.color_index, true, m.avatar_url)}
-    <div class="msg-bubble msg-other-bubble" style="background:${color.pastel}" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
+    <div class="msg-bubble msg-other-bubble" style="background:${color.pastel}" ontouchstart="msgTouchStart('${m.id}',event)" ontouchmove="msgTouchMove(event)" ontouchend="msgTouchEnd()" ondblclick="msgDblClick('${m.id}')" oncontextmenu="event.preventDefault();showMsgMenu(this.closest('.msg').getAttribute('data-msg-id'),false)">
       ${reactBtn}
       <div class="msg-header">
         <span class="msg-name" style="color:${color.vivid}" onclick="event.stopPropagation();showUserMenu('${uid}','${escapeHtml(name)}')">${escapeHtml(name)}</span>
@@ -1720,8 +1720,9 @@ let _longPressTriggered = false;
 
 function msgTouchStart(msgId, e) {
   _longPressTriggered = false;
-  _swipeMsgEl = e.currentTarget;
-  _swipeMsgId = _swipeMsgEl.dataset.msgId || msgId;
+  const msgRow = e.currentTarget.closest('.msg');
+  _swipeMsgEl = msgRow;
+  _swipeMsgId = msgRow?.dataset?.msgId || msgId;
   const touch = e.touches[0];
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
@@ -1741,8 +1742,8 @@ function msgTouchMove(e) {
   const touch = e.touches[0];
   const dx = touch.clientX - _swipeStartX;
   const dy = Math.abs(touch.clientY - _swipeStartY);
-  if (dy > 30) { clearTimeout(_longPressTimer); _swipeMsgEl.style.transform = ''; return; }
-  if (Math.abs(dx) > 10) clearTimeout(_longPressTimer);
+  if (Math.abs(dx) > 5 || dy > 5) clearTimeout(_longPressTimer);
+  if (dy > 30) { _swipeMsgEl.style.transform = ''; return; }
   const isMe = _swipeMsgEl.classList.contains('msg-mine');
   const validSwipe = isMe ? dx < 0 : dx > 0;
   if (validSwipe && Math.abs(dx) > 10) {
@@ -3350,6 +3351,8 @@ window.addEventListener('resize', () => {
   }
 });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener('contextmenu', (e) => { if (!e.target.closest('.msg')) e.preventDefault(); });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
