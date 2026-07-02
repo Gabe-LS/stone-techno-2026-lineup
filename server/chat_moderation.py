@@ -383,7 +383,20 @@ def reload_word_filter() -> None:
 async def moderate_message(
     db, user_id: str, text: str, image_url: str | list[str] | None = None
 ) -> dict:
-    from chat_db import is_muted
+    from chat_db import is_muted, is_banned, get_user
+
+    user = get_user(db, user_id)
+    if user and is_banned(
+        db,
+        user["provider"],
+        user["provider_id"],
+        user["device_fingerprint"] if "device_fingerprint" in user.keys() else None,
+    ):
+        return {
+            "allowed": False,
+            "reason": "You have been banned.",
+            "action": "ban",
+        }
 
     if is_muted(db, user_id):
         return {
@@ -452,7 +465,11 @@ async def moderate_message(
 
     if drug_result:
         result = process_strike(
-            db, user_id, "ai_moderation", drug_result["reason"], is_drug=True
+            db,
+            user_id,
+            "ai_moderation",
+            drug_result["reason"],
+            is_drug=drug_result.get("is_drug", False),
         )
         return {
             "allowed": False,

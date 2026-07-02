@@ -299,16 +299,22 @@ import unicodedata
 
 try:
     import regex as _re_mod
+
+    _DISPLAYNAME_RE = _re_mod.compile(
+        r"^[\p{Script=Latin}\d][\p{Script=Latin}\d ._-]*[\p{Script=Latin}\d]$"
+        r"|^[\p{Script=Latin}\d]{1,2}$",
+        _re_mod.UNICODE,
+    )
 except ImportError:
     _re_mod = re
+    _DISPLAYNAME_RE = re.compile(
+        r"^[a-zA-ZÀ-ɏ\d][a-zA-ZÀ-ɏ\d ._-]*[a-zA-ZÀ-ɏ\d]$"
+        r"|^[a-zA-ZÀ-ɏ\d]{1,2}$",
+        re.UNICODE,
+    )
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]{1,2}$")
 _USERNAME_BAD_RE = re.compile(r"[._-]{2}")
-_DISPLAYNAME_RE = _re_mod.compile(
-    r"^[\p{Script=Latin}\d][\p{Script=Latin}\d ._-]*[\p{Script=Latin}\d]$"
-    r"|^[\p{Script=Latin}\d]{1,2}$",
-    _re_mod.UNICODE,
-)
 
 
 def _validate_username(
@@ -320,6 +326,11 @@ def _validate_username(
         return "Allowed: a-z 0-9 . _ -"
     if _USERNAME_BAD_RE.search(username):
         return "No consecutive . _ -"
+    from chat_moderation import get_word_filter
+
+    wf = get_word_filter()
+    if wf.check_username(username):
+        return "Username not allowed"
     lower = username.lower()
     query = "SELECT id FROM users WHERE username_lower = ?"
     params = [lower]
@@ -342,6 +353,11 @@ def _validate_display_name(name: str) -> str | None:
         return "Invalid characters"
     if "  " in normalized:
         return "No double spaces"
+    from chat_moderation import get_word_filter
+
+    wf = get_word_filter()
+    if wf.check(name):
+        return "Display name not allowed"
     return None
 
 
@@ -959,6 +975,7 @@ async def admin_reports(request: Request, status: str = "pending"):
             "reported_name": r["reported_name"],
             "message_snapshot": r["message_snapshot"],
             "room_id": r["room_id"],
+            "reported_user_id": r["reported_user_id"],
             "reason": r["reason"],
             "status": r["status"],
             "created_at": r["created_at"],
@@ -1036,19 +1053,24 @@ async function load() {
   const reports = await res.json();
   const el = document.getElementById('reports');
   if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
+  const esc = s => {const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
   el.innerHTML = reports.map(r => `
     <div class="report">
-      <div class="meta">${r.reporter_name} reported ${r.reported_name} · ${r.created_at}</div>
-      <div>Reason: ${r.reason}</div>
-      <div class="snapshot">${r.message_snapshot}</div>
+      <div class="meta">${esc(r.reporter_name)} reported ${esc(r.reported_name)} · ${esc(r.created_at)}</div>
+      <div>Reason: ${esc(r.reason)}</div>
+      <div class="snapshot">${esc(r.message_snapshot)}</div>
       <div class="actions">
-        <button class="ban" onclick="action('${r.id}','${r.reported_name}','actioned')">Ban User</button>
+        <button class="ban" onclick="action('${r.id}','${esc(r.reported_name)}','actioned','${r.reported_user_id}')">Ban User</button>
         <button class="dismiss" onclick="action('${r.id}','','dismissed')">Dismiss</button>
       </div>
     </div>`).join('');
 }
-async function action(id, name, status) {
+async function action(id, name, status, userId) {
   if (status === 'actioned' && !confirm('Ban ' + name + '?')) return;
+  if (status === 'actioned' && userId) {
+    await fetch('/chat/api/admin/ban/' + userId + '?admin_token=' + token,
+      { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'Banned by admin via report ' + id}) });
+  }
   await fetch('/chat/api/admin/reports/' + id + '?admin_token=' + token,
     { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status}) });
   load();

@@ -631,7 +631,7 @@ async def _moderate_and_broadcast(
             text_preview = "Shared a meetup"
 
         room_obj = mgr.rooms.get(room_id)
-        active_viewers = set(room_obj.connections.keys()) if room_obj else set()
+        active_viewers = set(room_obj.conn_users.values()) if room_obj else set()
         meta = mgr._room_meta.get(room_id, {"type": "general", "name": ""})
         for uid, badge_rooms in list(mgr.user_badge_rooms.items()):
             if room_id not in badge_rooms or uid in active_viewers or uid == user_id:
@@ -651,7 +651,7 @@ async def _moderate_and_broadcast(
                 },
             )
 
-        connected_uids = set(mgr.user_ws.keys())
+        connected_uids = set(mgr.user_conns.keys())
         all_targets = _get_room_notification_targets(db, room_id, user_id)
         offline_targets = [uid for uid in all_targets if uid not in connected_uids]
         room_type = meta.get("type", "general")
@@ -977,8 +977,12 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                             "created_at": invite_msg["created_at"],
                         },
                     )
+                broadcast_room = stage_id
+                if not broadcast_room:
+                    main = get_main_room(db, event_id)
+                    broadcast_room = main["id"] if main else "general"
                 await manager.broadcast_to_room(
-                    stage_id or f"{event_id}:general",
+                    broadcast_room,
                     {"event": "meetup_created", "meetup": meetup},
                 )
 

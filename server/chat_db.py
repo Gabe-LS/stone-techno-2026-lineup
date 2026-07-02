@@ -180,6 +180,11 @@ def init_chat_db(db: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_chat_push_user ON chat_push_subscriptions(user_id);
+
+        CREATE TABLE IF NOT EXISTS avatars (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            data    BLOB NOT NULL
+        );
     """)
     db.commit()
 
