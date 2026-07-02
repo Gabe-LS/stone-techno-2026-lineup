@@ -789,6 +789,8 @@ def push_status(code: str, request: Request):
 
 @app.get("/ics/{slot_id}")
 def generate_ics(slot_id: str):
+    if not TIMETABLE_PATH.exists():
+        raise HTTPException(404, "Timetable not available")
     timetable = json.loads(TIMETABLE_PATH.read_text(encoding="utf-8"))
     slot = timetable.get("slots", {}).get(slot_id)
     if not slot:
@@ -798,8 +800,15 @@ def generate_ics(slot_id: str):
     start = slot["start"]
     end = slot["end"]
 
+    def _ics_esc(s: str) -> str:
+        return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
     def to_ics_dt(iso: str) -> str:
-        return iso.replace("-", "").replace(":", "") + "00"
+        clean = iso.replace("-", "").replace(":", "")
+        t_idx = clean.find("T")
+        if t_idx >= 0 and len(clean) - t_idx - 1 >= 6:
+            return clean
+        return clean + "00"
 
     dt_start = to_ics_dt(start)
     dt_end = to_ics_dt(end)
@@ -837,12 +846,12 @@ def generate_ics(slot_id: str):
             f"DTEND;TZID=Europe/Berlin:{dt_end}",
             f"DTSTAMP:{stamp}",
             f"UID:{uid}",
-            f"SUMMARY:{name}",
-            f"LOCATION:{floor}\\, Stone Techno 2026",
+            f"SUMMARY:{_ics_esc(name)}",
+            f"LOCATION:{_ics_esc(floor)}\\, Stone Techno 2026",
             "BEGIN:VALARM",
             "TRIGGER:-PT10M",
             "ACTION:DISPLAY",
-            f"DESCRIPTION:{name} starts in 10 minutes",
+            f"DESCRIPTION:{_ics_esc(name)} starts in 10 minutes",
             "END:VALARM",
             "END:VEVENT",
             "END:VCALENDAR",

@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import secrets
+import socket
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -123,13 +124,24 @@ def _is_safe_preview_url(url: str) -> bool:
     hostname = parsed.hostname
     if not hostname:
         return False
+    if (
+        hostname in ("localhost",)
+        or hostname.endswith(".local")
+        or hostname.endswith(".internal")
+    ):
+        return False
     try:
-        addr = ipaddress.ip_address(hostname)
-        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-            return False
-    except ValueError:
-        if hostname in ("localhost",) or hostname.endswith(".local") or hostname.endswith(".internal"):
-            return False
+        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+            addr = ipaddress.ip_address(sockaddr[0])
+            if (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_link_local
+                or addr.is_reserved
+            ):
+                return False
+    except (socket.gaierror, ValueError):
+        return False
     return True
 
 
@@ -331,7 +343,7 @@ class ChatRoom:
     async def broadcast(self, event: dict, exclude_conn: str | None = None) -> None:
         payload = json.dumps(event)
         disconnected = []
-        for conn_id, ws in self.connections.items():
+        for conn_id, ws in list(self.connections.items()):
             if conn_id == exclude_conn:
                 continue
             try:
@@ -383,6 +395,8 @@ class ConnectionManager:
             rooms = self.user_rooms.pop(user_id, set())
             self.user_badge_rooms.pop(user_id, None)
             self.user_unread.pop(user_id, None)
+            self._rate_buckets.pop(user_id, None)
+            self._recent_msgs.pop(user_id, None)
             for room_id in rooms:
                 room = self.rooms.get(room_id)
                 if room and not any(u == user_id for u in room.conn_users.values()):
@@ -850,6 +864,18 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                 if not room_id or not content:
                     continue
 
+                max_content = 10000 if msg_type == "text" else 2000
+                if len(content) > max_content:
+                    await manager.send_to_user(
+                        user_id,
+                        {
+                            "event": "message_rejected",
+                            "temp_id": temp_id,
+                            "reason": "Message too long.",
+                        },
+                    )
+                    continue
+
                 send_room = get_room(db, room_id)
                 if not send_room:
                     continue
@@ -858,6 +884,22 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                         "SELECT 1 FROM dm_participants WHERE room_id = ? AND user_id = ?",
                         (room_id, user_id),
                     ).fetchone():
+                        continue
+                    other_participant = db.execute(
+                        "SELECT user_id FROM dm_participants WHERE room_id = ? AND user_id != ?",
+                        (room_id, user_id),
+                    ).fetchone()
+                    if other_participant and is_blocked(
+                        db, other_participant["user_id"], user_id
+                    ):
+                        await manager.send_to_user(
+                            user_id,
+                            {
+                                "event": "message_rejected",
+                                "temp_id": temp_id,
+                                "reason": "Cannot message this user.",
+                            },
+                        )
                         continue
 
                 join_room_membership(db, user_id, room_id)
@@ -970,9 +1012,13 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
 
             elif event == "create_meetup":
                 stage_id = data.get("stage_id")
-                title = data.get("title")
+                title = (data.get("title") or "")[:60]
                 meetup_time = data.get("meetup_time")
                 if not title or not meetup_time:
+                    continue
+                try:
+                    datetime.fromisoformat(meetup_time)
+                except (ValueError, TypeError):
                     continue
                 meetup = create_meetup(
                     db,
@@ -983,8 +1029,8 @@ async def handle_chat_ws(ws: WebSocket, token: str, event_id: str) -> None:
                     meetup_time,
                     location_lat=data.get("lat"),
                     location_lng=data.get("lng"),
-                    location_label=data.get("label"),
-                    note=data.get("note"),
+                    location_label=(data.get("label") or "")[:100],
+                    note=(data.get("note") or "")[:200],
                 )
                 if stage_id:
                     invite_content = json.dumps(

@@ -265,7 +265,7 @@ async def auth_email_start(request: Request):
             logger.error("Failed to send email: %s", e)
             raise HTTPException(500, "Failed to send email")
     else:
-        logger.warning("MAILEROO_API_KEY not set — magic link token: %s", token)
+        logger.warning("MAILEROO_API_KEY not set — email not sent")
 
     return {"sent": True}
 
@@ -430,6 +430,8 @@ async def auth_update_profile(request: Request):
         params.append(country.strip()[:2].upper())
     avatar_url = body.get("avatar_url")
     if avatar_url is not None:
+        if avatar_url and not avatar_url.startswith("/chat/api/avatar/"):
+            raise HTTPException(400, "Invalid avatar URL")
         updates.append("avatar_url = ?")
         params.append(avatar_url)
     if updates:
@@ -581,7 +583,8 @@ async def room_info(room_id: str, request: Request):
 
 
 @router.get("/rooms/{room_id}/online")
-async def room_online(room_id: str):
+async def room_online(room_id: str, request: Request):
+    _get_user_from_cookie(request)
     from chat_ws import manager
 
     return manager.get_online_users(room_id)
@@ -659,10 +662,14 @@ async def get_meetup(meetup_id: str):
 async def create_meetup_endpoint(request: Request):
     user, db = _get_user_from_cookie(request)
     body = await request.json()
-    title = body.get("title")
+    title = (body.get("title") or "")[:60]
     meetup_time = body.get("meetup_time")
     if not title or not meetup_time:
         raise HTTPException(400, "title and meetup_time required")
+    try:
+        datetime.fromisoformat(meetup_time)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid meetup_time format")
 
     meetup = create_meetup(
         db,
@@ -673,8 +680,8 @@ async def create_meetup_endpoint(request: Request):
         meetup_time,
         location_lat=body.get("lat"),
         location_lng=body.get("lng"),
-        location_label=body.get("label"),
-        note=body.get("note"),
+        location_label=(body.get("label") or "")[:100],
+        note=(body.get("note") or "")[:200],
     )
     return meetup
 
@@ -905,7 +912,8 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception:
-        width, height, duration = 0, 0, 0
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(400, "Could not process video file")
 
     for i, frac in enumerate([0.25, 0.5, 0.75]):
         frame_path = upload_dir / f"{token}_mod{i}.webp"
@@ -1075,13 +1083,16 @@ button { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; f
 <h1>Chat Admin</h1>
 <div id="reports"></div>
 <script>
-const token = new URLSearchParams(location.search).get('admin_token');
+const _p = new URLSearchParams(location.search);
+const token = _p.get('admin_token') || '';
+if (token) history.replaceState(null, '', location.pathname);
+const _ah = {'X-Admin-Token': token};
 async function load() {
-  const res = await fetch('/chat/api/admin/reports?status=pending&admin_token=' + token);
+  const res = await fetch('/chat/api/admin/reports?status=pending', {headers: _ah});
   const reports = await res.json();
   const el = document.getElementById('reports');
   if (!reports.length) { el.innerHTML = '<div class="empty">No pending reports</div>'; return; }
-  const esc = s => {const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
+  const esc = s => {const d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/'/g,'&#39;');};
   el.innerHTML = reports.map(r => `
     <div class="report">
       <div class="meta">${esc(r.reporter_name)} reported ${esc(r.reported_name)} · ${esc(r.created_at)}</div>
@@ -1096,11 +1107,11 @@ async function load() {
 async function action(id, name, status, userId) {
   if (status === 'actioned' && !confirm('Ban ' + name + '?')) return;
   if (status === 'actioned' && userId) {
-    await fetch('/chat/api/admin/ban/' + userId + '?admin_token=' + token,
-      { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'Banned by admin via report ' + id}) });
+    await fetch('/chat/api/admin/ban/' + userId,
+      { method: 'POST', headers: {..._ah, 'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'Banned by admin via report ' + id}) });
   }
-  await fetch('/chat/api/admin/reports/' + id + '?admin_token=' + token,
-    { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status}) });
+  await fetch('/chat/api/admin/reports/' + id,
+    { method: 'PATCH', headers: {..._ah, 'Content-Type': 'application/json'}, body: JSON.stringify({status}) });
   load();
 }
 load();

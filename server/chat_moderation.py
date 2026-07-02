@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import unicodedata
 from pathlib import Path
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 BLOCKLIST_PATH = Path(__file__).resolve().parent / "chat" / "blocklist.txt"
 
@@ -431,8 +434,10 @@ async def moderate_message(
         ai_result, drug_result = None, None
 
     if isinstance(ai_result, Exception):
+        logger.warning("OpenAI moderation error: %s", ai_result)
         ai_result = None
     if isinstance(drug_result, Exception):
+        logger.warning("Content detection error: %s", drug_result)
         drug_result = None
 
     if ai_result:
